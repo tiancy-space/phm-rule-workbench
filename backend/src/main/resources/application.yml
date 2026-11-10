@@ -1,0 +1,54 @@
+# 机车 PHM 故障规则管理工作台
+# 数据源、跨域全部走环境变量，仓库中不放真实口令。
+server:
+  port: ${PORT:8080}
+  address: 0.0.0.0
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: phm-rule-workbench
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+    serialization:
+      write-dates-as-timestamps: false
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://127.0.0.1:5432/phm_rule}
+    username: ${DB_USERNAME:phm}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 1
+      connection-timeout: 10000
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    use-generated-keys: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: delFlag
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+app:
+  # 逗号分隔。* 表示反射请求来源（本地开发默认）。
+  cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
+logging:
+  level:
+    com.phm.rule: INFO
