@@ -99,6 +99,17 @@ public class ExprEngine {
     }
 
     /**
+     * 命名组组合式的展示树，给编辑弹窗的实时分组清单用。组内只有原子，没有命名组嵌套。
+     *
+     * @param groupExpr 以原子编号书写的组合式
+     * @param catalog   目录
+     * @return 且/或/叶子树
+     */
+    public DisplayNode displayGroup(String groupExpr, ExprCatalog catalog) {
+        return disp(logic.parseGroup(groupExpr, catalog.atomCodes()), catalog);
+    }
+
+    /**
      * 供梯形图使用的展示树。
      *
      * @param text     组合式

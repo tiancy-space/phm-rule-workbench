@@ -120,16 +120,18 @@ public class GroupRuleService {
      * 编辑弹窗里的实时预览，不落库。
      *
      * @param req 组合式
-     * @return 规范写法、展开式和中文
+     * @return 规范写法、展开式、中文，以及给弹窗分组清单用的展示树
      */
     public ExprPreviewVO preview(GroupPreviewRequest req) {
         ExprPreviewVO vo = new ExprPreviewVO();
         try {
-            String[] compiled = engine.compileGroup(req.getGroupExpr(), catalogService.load());
+            MemoryCatalog cat = catalogService.load();
+            String[] compiled = engine.compileGroup(req.getGroupExpr(), cat);
             vo.setOk(true);
             vo.setCanonicalExpr(compiled[0]);
             vo.setFaultRule(compiled[1]);
             vo.setRuleDesc(compiled[2]);
+            vo.setDisplay(engine.displayGroup(req.getGroupExpr(), cat));
             vo.setMessage("组合式有效");
         } catch (ExprException ex) {
             vo.setOk(false);

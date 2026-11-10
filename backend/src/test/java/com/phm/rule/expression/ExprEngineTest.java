@@ -87,6 +87,11 @@ public class ExprEngineTest {
         assertEquals("(R001 & R002) | (R003 & R002)", compiled[0]);
         assertEquals("(YX_SD_SJ > 0 & SJSD > 0) | (YX_SD_SJ == '-' & SJSD > 0)", compiled[1]);
         assertEquals("TCMS实际速度 > 0 km/h 且 LKJ实际速度 > 0 km/h ／ TCMS实际速度 未取到（缺失） 且 LKJ实际速度 > 0 km/h", compiled[2]);
+        com.phm.rule.expression.DisplayNode tree = engine.displayGroup("(R001 & R002) | (R003 & R002)", catalog);
+        assertEquals("or", tree.type);
+        assertEquals(2, tree.children.size());
+        assertEquals("and", tree.children.get(0).type);
+        assertEquals("TCMS实际速度 > 0 km/h", tree.children.get(0).children.get(0).text);
     }
 
     /**
