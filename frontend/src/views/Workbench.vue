@@ -179,37 +179,52 @@
             <div v-else-if="checkResult && checkText" class="bad">第 {{ (checkResult.pos||0)+1 }} 字符：{{ checkResult.message }}</div>
           </el-tab-pane>
           <el-tab-pane label="模拟测点试算验证" name="sim">
+            <div class="note">试算真实执行组合式和已继承前置条件。时间窗按同车关联码逐个模拟。空值或「缺失 / 无效」按未命中处理。</div>
             <el-button size="mini" @click="fill(true)">填充命中样例</el-button>
             <el-button size="mini" @click="fill(false)">填充未命中样例</el-button>
             <el-button size="mini" type="primary" @click="runSim">执行模拟试算</el-button>
-            <div class="grid" style="margin-top:8px">
-              <label v-for="field in simFields" :key="field">{{ field }}
-                <el-input v-model="simValues[field]" />
-              </label>
+            <div style="margin-top:8px">
+              <div v-for="p in simParams" :key="p.code" class="simrow">
+                <div>
+                  <b>{{ p.name }}</b> <span class="muted">{{ p.unit }}</span>
+                  <div class="mono muted">{{ p.code }} · {{ p.source }}</div>
+                </div>
+                <el-select v-if="p.enums.length" v-model="simValues[p.code]" :placeholder="'缺失 / 无效'" clearable>
+                  <el-option v-for="e in p.enums" :key="e.value" :label="e.value + ':' + e.label" :value="e.value" />
+                  <el-option label="缺失 / 无效" value="" />
+                </el-select>
+                <el-input v-else v-model="simValues[p.code]" :placeholder="p.unit || '模拟值'" />
+              </div>
             </div>
-            <div v-for="w in simWindows" :key="w">
-              <el-checkbox v-model="simWindowsState[w]">出现过 {{ w }}</el-checkbox>
+            <div v-for="w in simWindows" :key="w.key" class="note">
+              <b>{{ w.fn }}</b> · 同车 {{ w.sec }} 秒内
+              <el-checkbox v-model="simWindowsState[w.key]">出现过关联故障 {{ w.code }}</el-checkbox>
             </div>
-            <div v-if="simResult" :class="simResult.hit ? 'ok' : 'bad'">{{ simResult.summary }}</div>
-            <div v-for="row in (simResult && simResult.rows) || []" :key="row.kind+row.code+row.text">
-              <span :class="row.ok ? 'ok' : 'bad'">{{ row.ok ? '通过' : '未通过' }}</span>
-              {{ row.code }} {{ row.text }}
+            <div v-if="simResult" class="result" :class="simResult.hit ? 'pass' : 'fail'">
+              <b>{{ simResult.hit ? ('✓ 命中 · 报出故障 ' + draft.gzdm) : '⊘ 未命中 · 不报出故障' }}</b>
+              <div class="muted">前置 {{ simResult.preOk }}/{{ simResult.preTotal }} 通过 · 组合判定 {{ simResult.comboPassed ? '成立' : '不成立' }}</div>
+              <table>
+                <thead><tr><th>判定依据</th><th>结果</th></tr></thead>
+                <tbody>
+                  <tr v-for="row in simResult.rows" :key="row.kind+row.code+row.text">
+                    <td>{{ row.text }}</td>
+                    <td :class="row.ok ? 'ok' : 'bad'">{{ row.ok ? '通过' : '未通过' }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </el-tab-pane>
         </el-tabs>
         </template>
-        <h3>◈ 通用前置规则 · 继承 {{ (draft.inheritedFilters||[]).length }} 项
-          <el-button type="text" @click="skipOpen=!skipOpen">{{ skipOpen ? '收起' : '管理单条豁免' }}</el-button>
-        </h3>
-        <div v-if="skipOpen">
-          <el-checkbox-group v-model="draft.skipFilterIds">
-            <div v-for="p in pres" :key="p.id">
-              <el-checkbox :label="p.id">{{ p.filterName }} <span class="mono">{{ p.filterExpr }}</span>
-                <span v-if="draft.skipFilterIds.indexOf(p.id)>=0">（豁免）</span>
-              </el-checkbox>
-            </div>
-          </el-checkbox-group>
+        <h3>◈ 通用前置规则 · 继承 {{ liveInherited.length }} 项</h3>
+        <div class="chips">
+          <button type="button" v-for="p in applicablePres" :key="p.id" class="prechip"
+            :class="isSkip(p.id) ? 'skip' : 'on'" :title="p.filterExpr" @click="toggleSkip(p.id)">
+            {{ p.filterName }}<template v-if="isSkip(p.id)">（豁免）</template>
+          </button>
+          <span v-if="!applicablePres.length" class="muted">暂无适用前置规则</span>
         </div>
+        <div class="muted">点选芯片切换是否豁免：蓝底为继承生效，划线为跳过。保存后生效。</div>
         <div class="savebar">
           <span :class="dirty ? 'bad' : 'ok'">{{ dirty ? '● 未保存修改' : '✓ 已保存' }}</span>
           <div>
@@ -341,10 +356,7 @@
           <el-button v-for="a in atoms" :key="a.id" size="mini" @click="groupDlg.groupExpr=(groupDlg.groupExpr||'')+a.atomCode+' '">{{ a.atomCode }}</el-button>
         </el-form-item>
         <el-form-item label="组合式"><el-input type="textarea" :rows="3" v-model="groupDlg.groupExpr" @input="previewGroup" /></el-form-item>
-        <div v-if="groupPreview && groupPreview.ok" class="ok">✓ {{ groupPreview.canonicalExpr }}</div>
-        <pre v-if="groupPreview" class="pre">{{ groupPreview.faultRule }}</pre>
-        <div class="muted">{{ groupPreview && groupPreview.ruleDesc }}</div>
-        <div v-if="groupPreview && !groupPreview.ok" class="bad">{{ groupPreview.message }}</div>
+        <group-preview :preview="groupPreview" :name="groupDlg.groupName" />
       </el-form>
       <span slot="footer"><el-button type="primary" @click="saveGroup">保存命名组</el-button></span>
     </el-dialog>
@@ -402,6 +414,7 @@ import http from '../api/http'
 import { ladderSvg, checklistLines } from '../utils/ladder'
 import FlowBoard from '../components/FlowBoard.vue'
 import BigCanvas from '../components/BigCanvas.vue'
+import GroupPreview from '../components/GroupPreview.vue'
 
 var MODES = [
   { value: 'CONDITIONAL', label: '条件组合判定' },
@@ -414,13 +427,13 @@ var WINS = ['allNotExists', 'anyExists', 'allExists', 'anyNotExists']
 
 export default {
   name: 'Workbench',
-  components: { FlowBoard: FlowBoard, BigCanvas: BigCanvas },
+  components: { FlowBoard: FlowBoard, BigCanvas: BigCanvas, GroupPreview: GroupPreview },
   data: function () {
     return {
       stats: null, faults: [], atoms: [], groups: [], params: [], pres: [],
       filters: { cx: '', mode: '', ly: '', cz: '', q: '' },
       draft: null, saved: '', preview: null, timer: null,
-      viz: 'list', tab: 'cn', skipOpen: false, namedOpen: {}, bigOpen: false,
+      viz: 'list', tab: 'cn', namedOpen: {}, bigOpen: false,
       checkText: '', checkResult: null,
       simValues: {}, simWindowsState: {}, simResult: null,
       poolKind: 'atom', poolScope: 'FIT', poolQ: '',
@@ -479,7 +492,7 @@ export default {
     },
     simFields: function () {
       var text = (this.preview && this.preview.faultRule) || ''
-      ;(this.draft && this.draft.inheritedFilters || []).forEach(function (p) { text += ' ' + (p.filterExpr || '') })
+      this.liveInherited.forEach(function (p) { text += ' ' + (p.filterExpr || '') })
       var known = {}
       this.params.forEach(function (p) { known[p.paramCol] = 1 })
       var set = {}
@@ -490,6 +503,25 @@ export default {
       }
       return Object.keys(set)
     },
+    /** 试算行：中文名、单位、来源，枚举拆成下拉。码表不足时仍显示编码。 */
+    simParams: function () {
+      var self = this
+      return this.simFields.map(function (code) {
+        var p = self.params.filter(function (x) { return x.paramCol === code })[0]
+        var enums = []
+        String((p && p.enumDict) || '').split(';').forEach(function (part) {
+          var i = part.indexOf(':')
+          if (i > 0) enums.push({ value: part.slice(0, i).trim(), label: part.slice(i + 1).trim() })
+        })
+        return {
+          code: code,
+          name: (p && p.paramName) || code,
+          unit: (p && p.unit) || '',
+          source: (p && p.dataSource) || '',
+          enums: enums
+        }
+      })
+    },
     simWindows: function () {
       var out = []
       var self = this
@@ -498,11 +530,27 @@ export default {
         var atom = self.atoms.filter(function (a) { return a.atomCode === r.code })[0]
         if (atom && atom.atomType === 'WINDOW') {
           String(atom.relGzdm || '').split(',').forEach(function (c) {
-            if (c.trim()) out.push(atom.atomCode + ':' + c.trim())
+            if (c.trim()) out.push({ key: atom.atomCode + ':' + c.trim(), code: c.trim(), fn: atom.winFn, sec: atom.winSec })
           })
         }
       })
       return out
+    },
+    /** 启用且车型、来源都覆盖当前故障的前置。 */
+    applicablePres: function () {
+      var d = this.draft
+      if (!d) return []
+      return this.pres.filter(function (p) {
+        if (p.isEnabled !== 1) return false
+        var cx = String(p.scopeCx || 'ALL').split(',').map(function (s) { return s.trim() })
+        var cxOk = cx.indexOf('ALL') >= 0 || cx.indexOf(d.cx) >= 0
+        var lyOk = !p.scopeLy || p.scopeLy === 'ALL' || p.scopeLy === d.ly
+        return cxOk && lyOk
+      })
+    },
+    liveInherited: function () {
+      var ids = (this.draft && this.draft.skipFilterIds) || []
+      return this.applicablePres.filter(function (p) { return ids.indexOf(p.id) < 0 })
     },
     preFormVisible: {
       get: function () { return !!this.preForm },
@@ -519,7 +567,11 @@ export default {
   },
   watch: {
     'draft.ruleExpr': function () { this.queuePreview() },
-    'draft.refs': { deep: true, handler: function () { this.queuePreview() } }
+    'draft.refs': { deep: true, handler: function () { this.queuePreview() } },
+    groupDlg: function (v) {
+      if (!v) { this.groupPreview = null; return }
+      this.previewGroup()
+    }
   },
   mounted: function () {
     this.boot()
@@ -651,6 +703,17 @@ export default {
         var a = this.atoms.filter(function (x) { return x.atomCode === r.code })[0]
         if (a) this.atomDlg = this.editAtom(a)
       }
+    },
+    isSkip: function (id) {
+      return ((this.draft && this.draft.skipFilterIds) || []).indexOf(id) >= 0
+    },
+    /** 点芯片在「继承生效」和「豁免」之间切换，保存时随故障一起提交。 */
+    toggleSkip: function (id) {
+      var ids = ((this.draft && this.draft.skipFilterIds) || []).slice()
+      var i = ids.indexOf(id)
+      if (i >= 0) ids.splice(i, 1)
+      else ids.push(id)
+      this.draft.skipFilterIds = ids
     },
     runCheck: function () {
       var self = this
@@ -795,6 +858,17 @@ export default {
 .seg button { border:1px solid #cbd5e1; background:#fff; border-radius:6px; padding:3px 6px; }
 .seg button.on { background:#2563eb; color:#fff; border-color:#2563eb; }
 .grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+.chips { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0; }
+.prechip { font-size:12px; background:#fff; border:1px solid #e2e8f0; border-radius:4px; padding:3px 8px; cursor:pointer; }
+.prechip.on { background:#eff6ff; color:#1d4ed8; border-color:#93c5fd; }
+.prechip.skip { color:#b45309; text-decoration:line-through; background:#fffbeb; border-color:#fde68a; }
+.simrow { display:grid; grid-template-columns:1fr 160px; gap:10px; align-items:center; border-bottom:1px solid #edf1f5; padding:8px 0; }
+.note { background:#f8fafc; border-radius:6px; padding:6px 8px; margin:8px 0; color:#475569; }
+.result { padding:12px; border-radius:6px; margin-top:12px; }
+.result.pass { background:#f0fdf4; border:1px solid #bbf7d0; }
+.result.fail { background:#fff7ed; border:1px solid #fed7aa; }
+.result table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+.result td, .result th { text-align:left; border-bottom:1px solid #e2e8f0; padding:6px 4px; }
 .czbox { display:flex; gap:12px; padding:8px; background:#f8fafc; border-radius:8px; margin:8px 0; }
 .tokens { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
 .vizhead { display:flex; justify-content:space-between; margin-top:8px; }
