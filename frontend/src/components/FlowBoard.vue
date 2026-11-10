@@ -5,7 +5,7 @@
         <b>处置流程管理</b>
         <el-button type="text" @click="$emit('close')">× 关闭</el-button>
       </header>
-      <div class="bcols" :class="{ wide: right === 'view' }">
+      <div class="bcols" :class="{ wide: right === 'view' || right === 'trial' }">
         <aside class="scroll pane">
           <el-radio-group v-model="tab" size="mini">
             <el-radio-button label="fault">故障</el-radio-button>
@@ -102,218 +102,189 @@
               <div class="flowbox" v-html="svg" @click="onSvg"></div>
             </el-tab-pane>
             <el-tab-pane label="司机 / 专家视角" name="view">
-              <div v-if="!flow || !flow.steps.length" class="muted">流程无步骤</div>
-              <template v-else-if="perspStep">
-                <div class="simbanner view">视角预览：按流程配置渲染专家工作台与司机车载屏（无实时数据）
-                  <el-button type="text" size="mini" @click="resetRun">重置</el-button>
-                </div>
-                <div class="runinfo">
-                  <span v-for="k in runInfoItems" :key="k.code"><i>{{ k.name }}</i><b>—</b></span>
-                </div>
-                <div class="persp">
-                  <div class="expert">
-                    <div class="phead">专家工作台 · 处置单</div>
-                    <div v-if="!run.done" class="curstep" :style="{ borderLeftColor: stepColor(perspStep.stepType) }">
-                      <div class="row">
-                        <span class="sno">{{ circ(stepIndex(perspStep)) }}</span>
-                        <span class="tbadge" :class="'t-' + perspStep.stepType.toLowerCase()">{{ typeLabel(perspStep.stepType) }}</span>
-                        <b>{{ perspStep.stepTitle }}</b>
-                      </div>
-                      <div class="row roles">
-                        <span v-for="r in perspStep.roleCodes" :key="r" class="rchip" :class="'r-' + r">{{ roleLabel(r) }}</span>
-                      </div>
-                      <div v-if="perspStep.stepDesc" class="muted">{{ perspStep.stepDesc }}</div>
-                      <div v-if="perspStep.safetyTip" class="safety">⚠ {{ perspStep.safetyTip }}</div>
-                      <div v-if="perspStep.manualRef" class="muted">📖 {{ perspStep.manualRef }}</div>
-                    </div>
-                    <template v-if="!run.done">
-                      <div v-for="c in perspStep.cards" :key="c.id" class="dcard">
-                        <div v-if="c.cardKind==='FAULT'">关联故障 {{ c.relGzdm }}</div>
-                        <div v-else>{{ c.paramName || c.paramCol }} <span class="mono">{{ c.paramCol }}</span></div>
-                        <div class="muted">窗口 T0−{{ c.winPreSec }}s ～ T0+{{ c.winPostSec }}s · {{ c.statItems }}（上线后按故障时刻自动取数）</div>
-                      </div>
-                    </template>
-                    <div class="actbox">
-                      <div v-if="run.done && perspEnd && perspEnd.stepType==='END'" class="concbox" :style="conclStyle(perspEnd.conclusion)">
-                        <div class="cb1">处置结论：{{ conclLabel(perspEnd.conclusion) }}</div>
-                        <div>{{ perspEnd.stepTitle }}<template v-if="perspEnd.pushRepair"><br>⚑ 已标记回库，并向检修推送提示（模拟）</template></div>
-                        <div class="muted">共 {{ runSteps }} 步 · 模拟用时约 {{ run.min }} 分钟</div>
-                      </div>
-                      <div v-else-if="run.done" class="concbox">流程中断：出口无效</div>
-                      <template v-else-if="perspStep.stepType==='JUDGE'">
-                        <div class="pjbox none">
-                          <b>{{ hasDataCond(perspStep) ? '系统预判（运行时按数据卡自动判定）' : '人工判断' }}</b>
-                          <div class="muted">{{ branchHint(perspStep) }}</div>
-                        </div>
-                        <el-button v-for="b in perspStep.branches" :key="b.id" size="mini" @click="runPick(b.branchLabel)">选择「{{ b.branchLabel }}」</el-button>
-                      </template>
-                      <template v-else-if="perspStep.stepType==='OP'">
-                        <div class="cklist">
-                          <div v-for="(c,k) in perspStep.confirms" :key="c.id" class="ckline">
-                            <el-checkbox :value="isChecked(k)" @change="toggleCk(k, $event)" />
-                            <span class="rchip" :class="'r-' + c.roleCode">{{ roleLabel(c.roleCode) }}</span>
-                            {{ c.confirmText }}
-                          </div>
-                        </div>
-                        <el-button v-for="b in perspStep.branches" :key="b.id" size="mini" :type="b.branchLabel==='成功' ? 'primary' : ''" @click="runPick(b.branchLabel)">专家代录：{{ b.branchLabel }}</el-button>
-                      </template>
-                      <el-button v-else type="primary" size="mini" @click="runPick(perspStep.branches[0] && perspStep.branches[0].branchLabel)">{{ perspStep.stepType==='CONTACT' ? '已联络，' : '已查看，' }}进入下一步 ›</el-button>
-                    </div>
-                  </div>
-                  <div class="driver">
-                    <div class="phead">司机端 · 车载屏</div>
-                    <div class="screen">
-                      <template v-if="run.done && perspEnd">
-                        <div class="dmsg tag">处置结论</div>
-                        <div class="dmsg concl">{{ conclLabel(perspEnd.conclusion) }}</div>
-                        <div class="dmsg">{{ perspEnd.stepTitle }}</div>
-                      </template>
-                      <template v-else-if="driverOn">
-                        <div class="dmsg tag">专家指令 · 步骤 {{ circ(stepIndex(perspStep)) }}</div>
-                        <div class="dmsg big">{{ perspStep.driverAction || perspStep.stepTitle }}</div>
-                        <div v-if="perspStep.safetyTip" class="dmsg warn">⚠ {{ perspStep.safetyTip }}</div>
-                        <div class="dmsg">请按指令操作，完成后通话报告专家</div>
-                      </template>
-                      <template v-else>
-                        <div class="dmsg tag">故障 {{ bindingCode }} 已报警</div>
-                        <div class="dmsg big">待专家通话指导</div>
-                        <div class="dmsg">地面专家正在{{ driverWait }}，请保持正常驾驶，注意瞭望</div>
-                      </template>
-                    </div>
-                    <div class="muted">一期：专家通话指导并代录司机反馈；指令同步至车载屏</div>
-                  </div>
-                </div>
-                <div class="runlog">
-                  <div class="phead">处置时间线</div>
-                  <div v-if="!run.log.length" class="muted">尚未开始</div>
-                  <div v-for="(l,i) in run.log" :key="i" class="lg"><span class="lt">+{{ l.min }}′</span>{{ l.no }} {{ typeLabel(l.type) }} · {{ l.title }} → <b>{{ l.choice }}</b> <span class="muted">{{ l.by }}</span></div>
-                </div>
-              </template>
+              <flow-runner v-if="flow" :flow="flow" :trial="false" :active="right==='view'" />
             </el-tab-pane>
             <el-tab-pane label="历史故障试跑" name="trial">
-              <div class="banner">⚠ 模拟数据，非真实回放</div>
-              <el-select v-model="eventId" placeholder="选择事件" style="width:100%" @change="loadEvent">
-                <el-option v-for="e in events" :key="e.id" :label="e.eventTitle" :value="e.id" />
-              </el-select>
-              <div v-if="!events.length" class="muted">该故障暂无预置事件</div>
-              <div v-if="event" class="muted">预期走向：{{ event.expectOutcome }} · {{ event.cc }} · {{ event.sd }} · {{ event.wz }}</div>
-              <div v-if="step">
-                <b>{{ step.stepTitle }}</b>
-                <el-button size="mini" @click="evalStep">单步 ▸</el-button>
-                <el-button size="mini" @click="autoRun">自动运行 ▸▸</el-button>
-              </div>
-              <div v-for="c in (evalResult && evalResult.cards) || []" :key="c.cardId" class="pcard">
-                <div>{{ c.paramName || '关联故障' }} <span class="mono">{{ c.paramCol }}</span></div>
-                <div v-if="c.none" class="muted">窗口内无数据</div>
-                <div v-for="(v,k) in c.stats" :key="k">{{ k }}：{{ v }}</div>
-                <div :id="'chart-'+c.cardId" style="height:120px"></div>
-                <div v-for="h in c.hits" :key="h">{{ h }}</div>
-              </div>
-              <div v-if="evalResult && evalResult.prejudgeLabel" class="okbox">系统预判：{{ evalResult.prejudgeLabel }}<div>{{ evalResult.prejudgeReason }}</div></div>
-              <el-input v-model="reason" placeholder="改判理由（改判时必填）" size="mini" />
-              <div>
-                <el-button v-for="b in (step && step.branches) || []" :key="b.id" size="mini" @click="choose(b)">
-                  {{ evalResult && evalResult.prejudgeLabel===b.branchLabel ? '✓ 确认预判「'+b.branchLabel+'」' : '改判为「'+b.branchLabel+'」' }}
-                </el-button>
-              </div>
-              <div v-for="(l,i) in log" :key="'t'+i">{{ l }}</div>
+              <flow-runner v-if="flow" :flow="flow" :trial="true" :active="right==='trial'" :events="events" :event="event" @event="pickEvent" />
             </el-tab-pane>
           </el-tabs>
-          <div v-if="brick" class="brick">
-            <div class="row"><b>积木池</b> <span v-if="step">当前步骤：{{ step.stepTitle }}</span> <el-button type="text" @click="brick=false">×</el-button></div>
-            <el-input v-model="brickQ" size="mini" placeholder="搜索参数" />
-            <div v-for="p in brickParams" :key="p.id" class="row">
-              <span>{{ p.paramName }} <span class="mono">{{ p.paramCol }}</span></span>
-              <el-button type="text" @click="addParamCard(p)">加为数据卡</el-button>
-            </div>
-          </div>
         </aside>
       </div>
-      <el-drawer :visible.sync="stepOpen" :title="step ? step.stepTitle : ''" size="420px" :append-to-body="true">
+      <el-drawer :visible.sync="stepOpen" :title="step ? step.stepTitle : ''" size="520px" :append-to-body="true">
         <div v-if="step" style="padding:0 16px 24px">
-          <el-form label-width="90px" size="small">
-            <el-form-item label="步骤类型">
-              <el-select v-model="step.stepType" @change="saveStep">
-                <el-option v-for="t in types" :key="t.v" :label="t.l" :value="t.v" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="标题"><el-input v-model="step.stepTitle" @change="saveStep" /></el-form-item>
-            <el-form-item label="说明"><el-input type="textarea" v-model="step.stepDesc" @change="saveStep" /></el-form-item>
-            <el-form-item label="角色">
-              <el-checkbox-group v-model="step.roleCodes" @change="saveStep">
-                <el-checkbox label="DRIVER">司机</el-checkbox>
-                <el-checkbox label="EXPERT">专家</el-checkbox>
-                <el-checkbox label="SYSTEM">系统</el-checkbox>
-              </el-checkbox-group>
-            </el-form-item>
-            <el-form-item v-if="step.stepType==='END'" label="结束结论">
-              <el-select v-model="step.conclusion" @change="saveStep">
-                <el-option label="维持运行" value="MAINTAIN" />
-                <el-option label="限速运行" value="SPEED_LIMIT" />
-                <el-option label="请求救援" value="RESCUE" />
-                <el-option label="回库处理" value="RETURN_DEPOT" />
-              </el-select>
-              <el-checkbox :true-label="1" :false-label="0" v-model="step.pushRepair" @change="saveStep">标记回库，并向检修推送提示</el-checkbox>
-            </el-form-item>
-            <el-form-item label="安全提示"><el-input v-model="step.safetyTip" @change="saveStep" /></el-form-item>
-            <el-form-item label="手册条目"><el-input v-model="step.manualRef" @change="saveStep" /></el-form-item>
-            <el-form-item label="司机动作"><el-input type="textarea" v-model="step.driverAction" @change="saveStep" /></el-form-item>
-          </el-form>
-          <h4>数据卡</h4>
-          <el-button size="mini" @click="addCard('NUM')">＋ 数值窗口统计</el-button>
-          <el-button size="mini" @click="addCard('STATE')">＋ 状态量取值</el-button>
-          <el-button size="mini" @click="addCard('FAULT')">＋ 关联故障</el-button>
-          <div v-for="c in step.cards" :key="c.id" class="pcard">
-            <div>{{ c.cardCode }} {{ c.cardKind }} {{ c.paramName || c.relGzdm }}</div>
-            <div v-if="c.unfitCx && c.unfitCx.length" class="bad">⚠ 不适用于 {{ c.unfitCx.join('、') }}</div>
-            <el-select v-if="c.cardKind!=='FAULT'" v-model="c.paramCol" filterable size="mini" @change="saveCard(c)">
-              <el-option v-for="p in params" :key="p.id" :label="p.paramName" :value="p.paramCol" />
-            </el-select>
-            <el-input v-else v-model="c.relGzdm" size="mini" @change="saveCard(c)" />
-            <div>T0 − <el-input-number v-model="c.winPreSec" size="mini" @change="saveCard(c)" /> + <el-input-number v-model="c.winPostSec" size="mini" @change="saveCard(c)" /></div>
-            <el-input v-model="c.statItems" size="mini" @change="saveCard(c)" />
-            <el-button type="text" @click="delCard(c)">删除</el-button>
+          <div class="row">
+            <span class="sno">{{ circ(stepPos) }}</span>
+            <span class="tbadge" :class="'t-' + step.stepType.toLowerCase()">{{ typeLabel(step.stepType) }}</span>
+            <el-button type="text" :disabled="stepPos<=0" @click="goRel(-1)">‹ 上一步</el-button>
+            <el-button type="text" :disabled="stepPos>=flow.steps.length-1" @click="goRel(1)">下一步 ›</el-button>
           </div>
-          <h4>判断与分支</h4>
-          <div v-if="step.stepType==='END'" class="muted">结束节点无出口。</div>
-          <div v-for="(b,i) in step.branches" :key="i" class="pcard">
-            <el-input v-model="b.branchLabel" size="mini" style="width:100px" />
-            →
-            <el-select v-model="b.nextStepId" size="mini" placeholder="选择出口" :class="{badsel:!b.nextStepId}">
-              <el-option v-for="s in flow.steps" :key="s.id" :label="s.stepCode+' '+s.stepTitle" :value="s.id" />
-            </el-select>
-            <el-select v-model="b.condSrc" size="mini">
-              <el-option label="人工判断" value="NONE" />
-              <el-option label="引用数据卡" value="CARD" />
-              <el-option label="复用原子" value="ATOM" />
-              <el-option label="复用命名组" value="GROUP" />
-              <el-option label="否则" value="ELSE" />
-            </el-select>
-            <template v-if="b.condSrc==='CARD'">
-              <el-select v-model="b.condCardId" size="mini">
-                <el-option v-for="c in step.cards" :key="c.id" :label="c.cardCode" :value="c.id" />
-              </el-select>
-              <el-input v-model="b.condStat" size="mini" placeholder="统计项" style="width:90px" />
-              <el-input v-model="b.condOp" size="mini" style="width:60px" />
-              <el-input v-model="b.condVal" size="mini" style="width:70px" />
-            </template>
-            <el-button type="text" @click="step.branches.splice(i,1)">删除</el-button>
-          </div>
-          <el-button size="mini" @click="step.branches.push({branchLabel:'', condSrc:'NONE', nextStepId:null})">＋ 自定义分支</el-button>
-          <el-button size="mini" type="primary" @click="saveBranches">保存分支</el-button>
-          <h4>确认项</h4>
-          <div v-for="(c,i) in step.confirms" :key="'c'+i" class="row">
-            <el-input v-model="c.confirmText" size="mini" />
-            <el-select v-model="c.roleCode" size="mini" style="width:100px">
-              <el-option label="司机" value="DRIVER" /><el-option label="专家" value="EXPERT" /><el-option label="系统" value="SYSTEM" />
-            </el-select>
-            <el-button type="text" @click="step.confirms.splice(i,1)">删除</el-button>
-          </div>
-          <el-button size="mini" @click="step.confirms.push({confirmText:'', roleCode:'DRIVER', isRequired:1})">＋ 添加确认项</el-button>
-          <el-button size="mini" type="primary" @click="saveConfirms">保存确认项</el-button>
+          <el-tabs v-model="stepTab">
+            <el-tab-pane label="基本信息" name="basic">
+              <el-form label-width="90px" size="small">
+                <el-form-item label="步骤类型">
+                  <el-select v-model="step.stepType" @change="saveStep">
+                    <el-option v-for="t in types" :key="t.v" :label="t.l" :value="t.v" />
+                  </el-select>
+                  <div class="muted">{{ typeHint }}</div>
+                </el-form-item>
+                <el-form-item label="标题"><el-input v-model="step.stepTitle" placeholder="判断类写成问题" @change="saveStep" /></el-form-item>
+                <el-form-item label="说明"><el-input type="textarea" v-model="step.stepDesc" @change="saveStep" /></el-form-item>
+                <el-form-item label="角色">
+                  <el-checkbox-group v-model="step.roleCodes" @change="saveStep">
+                    <el-checkbox label="DRIVER">司机 · 执行</el-checkbox>
+                    <el-checkbox label="EXPERT">专家 · 确认 / 记录 / 改判</el-checkbox>
+                    <el-checkbox label="SYSTEM">系统 · 预答</el-checkbox>
+                  </el-checkbox-group>
+                  <div class="muted">查看 / 联络 / 结束由专家处理；判断由系统预答、专家确认；操作由司机执行、专家代录。</div>
+                </el-form-item>
+                <el-form-item v-if="step.stepType==='END'" label="结束结论">
+                  <el-select v-model="step.conclusion" @change="saveStep">
+                    <el-option label="维持运行" value="MAINTAIN" />
+                    <el-option label="限速运行" value="SPEED_LIMIT" />
+                    <el-option label="请求救援" value="RESCUE" />
+                    <el-option label="回库处理" value="RETURN_DEPOT" />
+                  </el-select>
+                  <el-checkbox :true-label="1" :false-label="0" v-model="step.pushRepair" @change="saveStep">标记回库，并向检修推送提示</el-checkbox>
+                </el-form-item>
+                <el-form-item label="安全提示"><el-input v-model="step.safetyTip" placeholder="如：下车作业前须确认停稳并做好防溜" @change="saveStep" /></el-form-item>
+                <el-form-item label="手册条目"><el-input v-model="step.manualRef" placeholder="如：司机手册 · 制动系统 · 停放制动" @change="saveStep" /></el-form-item>
+              </el-form>
+            </el-tab-pane>
+            <el-tab-pane :label="'数据卡 ' + (step.cards||[]).length" name="cards">
+              <div class="note">以故障时刻 T0 为锚点取数。判断条件在「判断与分支」里配置，可以引用这里的统计结果。</div>
+              <div v-for="c in step.cards" :key="c.id" class="pcard">
+                <div class="row"><b>{{ c.cardCode }} · {{ cardKindLabel(c.cardKind) }}</b><el-button type="text" @click="delCard(c)">删除</el-button></div>
+                <div v-if="c.unfitCx && c.unfitCx.length" class="bad">⚠ 不适用于 {{ c.unfitCx.join('、') }}</div>
+                <el-select v-if="c.cardKind!=='FAULT'" v-model="c.paramCol" filterable size="mini" style="width:100%" @change="saveCard(c)">
+                  <el-option v-for="p in params" :key="p.id" :label="p.paramName+' '+p.paramCol" :value="p.paramCol" />
+                </el-select>
+                <el-input v-else v-model="c.relGzdm" size="mini" placeholder="关联故障代码，逗号分隔" @change="saveCard(c)" />
+                <div class="muted" v-if="paramOf(c)">{{ paramOf(c).unit || '无单位' }} · {{ paramOf(c).dataSource }}</div>
+                <div>窗口 T0 − <el-input-number v-model="c.winPreSec" size="mini" :min="0" @change="saveCard(c)" /> ～ T0 + <el-input-number v-model="c.winPostSec" size="mini" :min="0" @change="saveCard(c)" /> 秒</div>
+                <div class="statrow">
+                  <el-checkbox v-for="st in statOptions(c)" :key="st" :value="hasStat(c, st)" @change="toggleStat(c, st, $event)">{{ st }}</el-checkbox>
+                </div>
+                <div v-if="c.cardKind==='NUM'" class="row">
+                  越限
+                  <el-select v-model="c.limitOp" size="mini" style="width:74px" @change="saveCard(c)">
+                    <el-option v-for="o in limitOps" :key="o" :label="o" :value="o" />
+                  </el-select>
+                  <el-input v-model="c.limitVal" size="mini" style="width:80px" placeholder="阈值" @change="saveCard(c)" />
+                  <el-checkbox :true-label="1" :false-label="0" v-model="c.showCurve" @change="saveCard(c)">显示小曲线</el-checkbox>
+                </div>
+                <div v-if="c.cardKind==='STATE' && enumOptions(c).length">
+                  目标状态
+                  <el-select v-model="c.targetVal" size="mini" @change="saveCard(c)">
+                    <el-option v-for="e in enumOptions(c)" :key="e.value" :label="e.value+' : '+e.label" :value="e.value" />
+                  </el-select>
+                </div>
+              </div>
+              <el-button size="mini" @click="addCard('NUM')">＋ 数值窗口统计</el-button>
+              <el-button size="mini" @click="addCard('STATE')">＋ 状态量取值</el-button>
+              <el-button size="mini" @click="addCard('FAULT')">＋ 关联故障</el-button>
+              <el-button size="mini" @click="openBrick('param')">▦ 从积木池选参数</el-button>
+            </el-tab-pane>
+            <el-tab-pane label="判断与分支" name="branch">
+              <div v-if="step.stepType==='END'" class="note">结束节点无出口。结论在「基本信息」中设置：{{ conclLabel(step.conclusion) }}<template v-if="step.pushRepair">（回库并推送检修提示）</template></div>
+              <div v-else-if="step.stepType==='VIEW' || step.stepType==='CONTACT'" class="note">{{ typeLabel(step.stepType) }}步骤：单一下一步。</div>
+              <div v-else-if="step.stepType==='OP'" class="note">操作步骤：司机执行，专家记录 / 复核；按结果走「成功」或「未成功」。</div>
+              <template v-else>
+                <div class="note">系统按分支顺序判定，首个成立的即系统预判；都不成立走「否则」。专家可改判，须填写理由。条件可引用本步数据卡，也可复用原子或命名组。</div>
+                <div class="row">
+                  <span class="muted">分支预设：</span>
+                  <el-button size="mini" @click="presetBranches(['是','否'])">是 / 否</el-button>
+                  <el-button size="mini" @click="presetBranches(['正常','异常'])">正常 / 异常</el-button>
+                </div>
+              </template>
+              <template v-if="step.stepType!=='END'">
+              <div v-for="(b,i) in step.branches" :key="i" class="pcard">
+                <div class="row">
+                  <span class="sno">{{ i+1 }}</span>
+                  <el-input v-if="step.stepType==='JUDGE'" v-model="b.branchLabel" size="mini" style="width:120px" />
+                  <b v-else>{{ b.branchLabel }}</b>
+                  <span>→</span>
+                  <el-select v-model="b.nextStepId" size="mini" placeholder="选择出口" :class="{badsel:!b.nextStepId}">
+                    <el-option v-for="s in flow.steps" :key="s.id" :label="s.stepCode+' '+s.stepTitle" :value="s.id" />
+                  </el-select>
+                  <el-button v-if="step.stepType==='JUDGE' && step.branches.length>2" type="text" @click="step.branches.splice(i,1)">删除</el-button>
+                </div>
+                <template v-if="step.stepType==='JUDGE'">
+                  <el-select v-model="b.condSrc" size="mini" style="width:130px">
+                    <el-option label="人工判断" value="NONE" />
+                    <el-option label="引用数据卡" value="CARD" />
+                    <el-option label="复用原子" value="ATOM" />
+                    <el-option label="复用命名组" value="GROUP" />
+                    <el-option label="否则" value="ELSE" />
+                  </el-select>
+                  <template v-if="b.condSrc==='CARD'">
+                    <el-select v-model="b.condCardId" size="mini">
+                      <el-option v-for="c in step.cards" :key="c.id" :label="(c.paramName||c.relGzdm||c.cardCode)" :value="c.id" />
+                    </el-select>
+                    <el-input v-model="b.condStat" size="mini" placeholder="统计项" style="width:90px" />
+                    <el-input v-model="b.condOp" size="mini" style="width:60px" />
+                    <el-input v-model="b.condVal" size="mini" style="width:70px" />
+                  </template>
+                  <el-select v-if="b.condSrc==='ATOM'" v-model="b.condAtomId" filterable size="mini" placeholder="选择原子">
+                    <el-option v-for="a in atoms" :key="a.id" :label="a.atomCode+' '+a.atomName" :value="a.id" />
+                  </el-select>
+                  <el-select v-if="b.condSrc==='GROUP'" v-model="b.condGroupId" filterable size="mini" placeholder="选择命名组">
+                    <el-option v-for="g in groups" :key="g.id" :label="g.groupCode+' '+g.groupName" :value="g.id" />
+                  </el-select>
+                </template>
+              </div>
+              </template>
+              <div v-if="step.stepType==='JUDGE'">
+                <el-button size="mini" @click="step.branches.push({branchLabel:'', condSrc:'NONE', nextStepId:null})">＋ 自定义分支</el-button>
+              </div>
+              <el-button v-if="step.stepType!=='END'" size="mini" type="primary" @click="saveBranches()">保存分支</el-button>
+            </el-tab-pane>
+            <el-tab-pane label="确认项" name="confirm">
+              <el-form label-width="90px" size="small">
+                <el-form-item label="司机动作">
+                  <el-input type="textarea" :rows="2" v-model="step.driverAction" placeholder="车载屏显示；一期由专家通话指导并代录" @change="saveStep" />
+                </el-form-item>
+              </el-form>
+              <div class="muted">确认项按执行角色定义。一期司机项由专家代录，选「成功」前必须全部勾选。</div>
+              <div v-for="(c,i) in step.confirms" :key="'c'+i" class="row">
+                <el-input v-model="c.confirmText" size="mini" />
+                <el-select v-model="c.roleCode" size="mini" style="width:100px">
+                  <el-option label="司机" value="DRIVER" /><el-option label="专家" value="EXPERT" /><el-option label="系统" value="SYSTEM" />
+                </el-select>
+                <el-button type="text" @click="step.confirms.splice(i,1)">删除</el-button>
+              </div>
+              <div v-if="!step.confirms.length" class="muted">暂无确认项</div>
+              <el-button size="mini" @click="step.confirms.push({confirmText:'', roleCode:'DRIVER', isRequired:1})">＋ 添加确认项</el-button>
+              <el-button size="mini" type="primary" @click="saveConfirms">保存确认项</el-button>
+            </el-tab-pane>
+          </el-tabs>
         </div>
       </el-drawer>
-    </div>
+      <el-drawer :visible.sync="brick" title="积木池" size="420px" :append-to-body="true">
+        <div style="padding:0 16px 16px">
+          <el-radio-group v-model="brickTab" size="mini">
+            <el-radio-button label="param">参数元数据</el-radio-button>
+            <el-radio-button label="atom">原子规则</el-radio-button>
+            <el-radio-button label="group">命名组</el-radio-button>
+          </el-radio-group>
+          <el-input v-model="brickQ" size="mini" placeholder="搜索" clearable style="margin:8px 0" />
+          <div class="muted">{{ step ? ('当前步骤：' + circ(stepPos) + ' ' + step.stepTitle) : '打开某个步骤后可把积木加入该步骤' }}</div>
+          <template v-if="brickTab==='param'">
+            <div v-for="p in brickParams" :key="p.id" class="pcard">
+              <div><b>{{ p.paramName }}</b> <span class="mono">{{ p.paramCol }}</span></div>
+              <div class="muted">{{ p.dataType }} · {{ p.unit || '无单位' }} · {{ p.dataSource }}</div>
+              <el-button v-if="step" size="mini" @click="addParamCard(p)">加为数据卡</el-button>
+            </div>
+          </template>
+          <template v-else>
+            <div v-for="a in brickRules" :key="a.kind+a.id" class="pcard">
+              <div><b>{{ a.code }}</b> {{ a.name }}</div>
+              <div class="muted">适用 {{ a.scope || 'ALL' }}</div>
+              <el-button v-if="step && step.stepType==='JUDGE'" size="mini" @click="setBrickCond(a)">设为判断条件</el-button>
+            </div>
+          </template>
+          <div v-if="brickTab!=='param' && !brickRules.length" class="muted">无匹配</div>
+        </div>
+      </el-drawer>
     <el-dialog title="选择步骤类型" :visible.sync="typeDlg" width="480px" append-to-body>
       <el-button v-for="t in types" :key="t.v" style="display:block;width:100%;margin:6px 0" @click="doAdd(t.v)">{{ t.l }} · {{ t.h }}</el-button>
     </el-dialog>
@@ -335,6 +306,7 @@
         <el-button size="mini" @click="copyAs(t)">复制为专属</el-button>
       </div>
     </el-dialog>
+    </div>
   </div>
 </template>
 
@@ -342,7 +314,7 @@
 import http from '../api/http'
 import { flowSvg, FLOW_LEGEND } from '../utils/flowSvg'
 import BigCanvas from './BigCanvas.vue'
-import * as echarts from 'echarts'
+import FlowRunner from './FlowRunner.vue'
 
 var TYPES = [
   { v: 'VIEW', l: '查看', h: '查看数据与现场状态' },
@@ -355,15 +327,15 @@ var CIRC = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'
 
 export default {
   name: 'FlowBoard',
-  components: { BigCanvas: BigCanvas },
+  components: { BigCanvas: BigCanvas, FlowRunner: FlowRunner },
   data: function () {
     return {
       faults: [], flows: [], tab: 'fault', q: '', sel: null, flow: null, step: null,
-      right: 'svg', brick: false, brickQ: '', params: [],
+      right: 'svg', brick: false, brickTab: 'param', brickQ: '', params: [], atoms: [], groups: [],
+      stepTab: 'basic',
       typeDlg: false, afterId: null, bindDlg: false, bindIds: [], applyOpen: false,
-      events: [], eventId: null, event: null, evalResult: null, reason: '', log: [],
-      run: { fid: null, cur: null, checks: {}, log: [], path: [], done: false, min: 0 },
-      types: TYPES, flowBig: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND
+      events: [], eventId: null, event: null,
+      types: TYPES, limitOps: ['<', '<=', '>', '>='], flowBig: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND
     }
   },
   computed: {
@@ -396,46 +368,32 @@ export default {
       var q = (this.brickQ || '').toLowerCase()
       return this.params.filter(function (p) {
         return !q || (p.paramName + p.paramCol).toLowerCase().indexOf(q) >= 0
-      }).slice(0, 30)
+      }).slice(0, 40)
     },
-    perspStep: function () {
-      if (!this.flow || !this.flow.steps || !this.flow.steps.length) return null
-      var cur = this.run && this.run.cur
-      var found = this.flow.steps.filter(function (s) { return s.id === cur })[0]
-      return found || this.flow.steps[0]
-    },
-    perspEnd: function () {
-      if (!this.run || !this.run.done || !this.flow) return null
-      var id = this.run.path[this.run.path.length - 1]
-      return this.flow.steps.filter(function (s) { return s.id === id })[0] || null
-    },
-    driverOn: function () {
-      return this.perspStep && !this.run.done && (this.perspStep.roleCodes || []).indexOf('DRIVER') >= 0
-    },
-    driverWait: function () {
-      var t = this.perspStep && this.perspStep.stepType
-      if (t === 'CONTACT') return '联络调度 / 检修'
-      if (t === 'JUDGE') return '研判数据'
-      return '查看数据'
-    },
-    runSteps: function () {
-      return (this.run.log || []).filter(function (x) { return x.type !== 'END' }).length
-    },
-    bindingCode: function () {
-      var b = this.flow && this.flow.bindings && this.flow.bindings[0]
-      return b ? b.gzdm : ''
-    },
-    runInfoItems: function () {
-      var names = { CC: '车次', SD: '速度', WZ: '位置', JL: '交路', SJ: '司机', FSSJ: '发生时间' }
-      return String((this.flow && this.flow.runInfoCols) || '').split(',').map(function (c) { return c.trim() }).filter(Boolean).map(function (c) {
-        return { code: c, name: names[c] || c }
+    brickRules: function () {
+      var q = (this.brickQ || '').toLowerCase()
+      var src = this.brickTab === 'group' ? this.groups : this.atoms
+      var kind = this.brickTab === 'group' ? 'group' : 'atom'
+      return src.filter(function (a) {
+        var text = kind === 'group' ? (a.groupCode + a.groupName) : (a.atomCode + a.atomName + (a.atomExpr || ''))
+        return !q || text.toLowerCase().indexOf(q) >= 0
+      }).slice(0, 40).map(function (a) {
+        return kind === 'group'
+          ? { id: a.id, code: a.groupCode, name: a.groupName, scope: a.scopeCx, kind: 'group' }
+          : { id: a.id, code: a.atomCode, name: a.atomName, scope: a.scopeCx, kind: 'atom' }
       })
-    }
-  },
-  watch: {
-    flow: function (f) {
-      var id = f && f.id
-      if (!this.run || this.run.fid !== id) this.resetRun()
+    },
+    stepPos: function () {
+      if (!this.flow || !this.step) return -1
+      var id = this.step.id
+      var i = -1
+      this.flow.steps.forEach(function (s, n) { if (s.id === id) i = n })
+      return i
+    },
+    typeHint: function () {
+      var type = this.step && this.step.stepType
+      var t = TYPES.filter(function (x) { return x.v === type })[0]
+      return t ? t.h : ''
     }
   },
   mounted: function () {
@@ -447,11 +405,15 @@ export default {
       return Promise.all([
         http.get('/api/faults'),
         http.get('/api/flows'),
-        http.get('/api/params', { params: { pageSize: 500 } })
+        http.get('/api/params', { params: { pageSize: 500 } }),
+        http.get('/api/atoms'),
+        http.get('/api/groups')
       ]).then(function (all) {
         self.faults = all[0]
         self.flows = all[1]
         self.params = (all[2].records) || []
+        self.atoms = all[3] || []
+        self.groups = all[4] || []
         if (pick) {
           var want = self.$store.state.flowFaultId
           var row = self.faults.filter(function (f) { return f.id === want })[0]
@@ -595,15 +557,24 @@ export default {
       if (!this.step) { this.$message.warning('请先打开一个步骤'); return }
       var self = this
       var kind = p.dataType === 'NUMBER' ? 'NUM' : 'STATE'
+      this.stepTab = 'cards'
       http.post('/api/flows/' + this.flow.id + '/steps/' + this.step.id + '/cards', {
         rev: this.flow.rev, cardKind: kind, paramCol: p.paramCol
-      }).then(function (d) { self.afterWrite(d, self.step.id) }).catch(this.fail)
+      }).then(function (d) {
+        self.afterWrite(d, self.step.id)
+        self.$message.success('已将「' + p.paramName + '」加为数据卡')
+      }).catch(this.fail)
     },
-    saveBranches: function () {
+    saveBranches: function (quiet) {
       var self = this
-      http.put('/api/flows/' + this.flow.id + '/steps/' + this.step.id + '/branches', {
+      var stepId = this.step.id
+      return http.put('/api/flows/' + this.flow.id + '/steps/' + stepId + '/branches', {
         rev: this.flow.rev, branches: this.step.branches
-      }).then(function (d) { self.afterWrite(d, self.step.id); self.$message.success('分支已保存') }).catch(this.fail)
+      }).then(function (d) {
+        self.afterWrite(d, stepId)
+        if (!quiet) self.$message.success('分支已保存')
+        return d
+      }).catch(this.fail)
     },
     saveConfirms: function () {
       var self = this
@@ -668,175 +639,14 @@ export default {
         if (self.eventId) self.loadEvent()
       }).catch(this.fail)
     },
+    pickEvent: function (id) {
+      this.eventId = id
+      this.loadEvent()
+    },
     loadEvent: function () {
       var self = this
-      if (!this.eventId) return
-      http.get('/api/trials/' + this.eventId).then(function (e) { self.event = e; self.log = []; self.evalResult = null }).catch(this.fail)
-    },
-    evalStep: function () {
-      var self = this
-      if (!this.step || !this.eventId) return Promise.resolve(null)
-      return http.post('/api/trials/' + this.eventId + '/steps/' + this.step.id + '/evaluate').then(function (r) {
-        self.evalResult = r
-        self.$nextTick(function () { self.drawCharts() })
-        return r
-      }).catch(function (e) { self.fail(e); return null })
-    },
-    drawCharts: function () {
-      var cards = (this.evalResult && this.evalResult.cards) || []
-      cards.forEach(function (c) {
-        if (!c.points || !c.points.length) return
-        var el = document.getElementById('chart-' + c.cardId)
-        if (!el) return
-        var chart = echarts.init(el)
-        chart.setOption({
-          grid: { left: 30, right: 10, top: 16, bottom: 20 },
-          xAxis: { type: 'value', name: 's' },
-          yAxis: { type: 'value', scale: true },
-          series: [{ type: 'line', showSymbol: false, data: c.points, markLine: { data: [{ xAxis: 0 }] } }]
-        })
-      })
-    },
-    /** 换流程时把视角走步器回到第一步。同一流程刷新不打断。 */
-    resetRun: function () {
-      var f = this.flow
-      this.run = {
-        fid: f ? f.id : null,
-        cur: f && f.steps && f.steps[0] ? f.steps[0].id : null,
-        checks: {}, log: [], path: [], done: false, min: 0
-      }
-    },
-    stepIndex: function (s) {
-      if (!this.flow || !s) return 0
-      var i = -1
-      this.flow.steps.forEach(function (x, n) { if (x.id === s.id) i = n })
-      return i < 0 ? 0 : i
-    },
-    stepColor: function (t) {
-      return { VIEW: '#0369a1', JUDGE: '#b45309', OP: '#15803d', CONTACT: '#be185d', END: '#334155' }[t] || '#334155'
-    },
-    roleLabel: function (r) {
-      return { DRIVER: '司机', EXPERT: '专家', SYSTEM: '系统' }[r] || r
-    },
-    conclStyle: function (c) {
-      var map = {
-        MAINTAIN: ['#15803d', '#f0fdf4'],
-        SPEED_LIMIT: ['#b45309', '#fffbeb'],
-        RESCUE: ['#b91c1c', '#fef2f2'],
-        RETURN_DEPOT: ['#1d4ed8', '#eff6ff']
-      }
-      var x = map[c] || ['#334155', '#f1f5f9']
-      return { color: x[0], background: x[1], borderColor: x[0] }
-    },
-    isChecked: function (k) {
-      var s = this.perspStep
-      var arr = s && this.run.checks[s.id]
-      return !!(arr && arr[k])
-    },
-    toggleCk: function (k, checked) {
-      var s = this.perspStep
-      if (!s) return
-      var checks = Object.assign({}, this.run.checks)
-      var arr = (checks[s.id] || []).slice()
-      arr[k] = !!checked
-      checks[s.id] = arr
-      this.run = Object.assign({}, this.run, { checks: checks })
-    },
-    hasDataCond: function (s) {
-      return (s.branches || []).some(function (b) { return b.condSrc && b.condSrc !== 'NONE' && b.condSrc !== 'ELSE' })
-    },
-    condText: function (s, b) {
-      if (!b || !b.condSrc || b.condSrc === 'NONE') return '人工判断'
-      if (b.condSrc === 'ELSE') return '否则'
-      if (b.condSrc === 'CARD') {
-        var card = (s.cards || []).filter(function (c) { return c.id === b.condCardId })[0]
-        var name = card ? (card.cardKind === 'FAULT' ? ('关联故障 ' + (card.relGzdm || '')) : (card.paramName || card.paramCol)) : '数据卡'
-        return name + ' ' + (b.condStat || '') + ' ' + (b.condOp || '') + ' ' + (b.condVal || '')
-      }
-      if (b.condSrc === 'ATOM') return b.condAtomCode || '原子条件'
-      if (b.condSrc === 'GROUP') return '命名组「' + (b.condGroupCode || '') + '」'
-      return b.condSrc
-    },
-    branchHint: function (s) {
-      var self = this
-      return (s.branches || []).map(function (b) { return b.branchLabel + '：' + self.condText(s, b) }).join('；')
-    },
-    /**
-     * 视角走步。操作步骤选「成功」前，确认项必须全部勾选。
-     */
-    runPick: function (label) {
-      var s = this.perspStep
-      if (!s || this.run.done) return
-      var by = '专家确认'
-      if (s.stepType === 'JUDGE') by = '专家选择'
-      if (s.stepType === 'OP') {
-        var confirms = s.confirms || []
-        var ck = this.run.checks[s.id] || []
-        if (label === '成功') {
-          for (var i = 0; i < confirms.length; i++) {
-            if (!ck[i]) {
-              this.$message.error('请先勾选全部确认项（专家代录司机反馈）')
-              return
-            }
-          }
-        }
-        by = '专家代录司机反馈'
-      }
-      var sim = { VIEW: 1, JUDGE: 1, OP: 4, CONTACT: 3, END: 0 }
-      var min = (this.run.min || 0) + (sim[s.stepType] == null ? 1 : sim[s.stepType])
-      var log = this.run.log.concat([{ no: this.circ(this.stepIndex(s)), type: s.stepType, title: s.stepTitle, choice: label || '', by: by, min: min }])
-      var path = this.run.path.concat([s.id])
-      var branch = (s.branches || []).filter(function (b) { return b.branchLabel === label })[0]
-      var next = branch && this.flow.steps.filter(function (x) { return x.id === branch.nextStepId })[0]
-      if (!next) {
-        this.run = Object.assign({}, this.run, { log: log, path: path, min: min, done: true })
-        return
-      }
-      if (next.stepType === 'END') {
-        log = log.concat([{ no: this.circ(this.stepIndex(next)), type: 'END', title: next.stepTitle, choice: this.conclLabel(next.conclusion), by: '结论', min: min }])
-        path = path.concat([next.id])
-        this.run = Object.assign({}, this.run, { cur: next.id, log: log, path: path, min: min, done: true })
-        return
-      }
-      this.run = Object.assign({}, this.run, { cur: next.id, log: log, path: path, min: min, done: false })
-    },
-    choose: function (b) {
-      if (!this.evalResult) { this.advance(b.branchLabel); return }
-      var pre = this.evalResult.prejudgeLabel
-      if (pre && pre !== b.branchLabel && !this.reason) {
-        this.$message.error('改判须填写理由')
-        return
-      }
-      var note = pre && pre !== b.branchLabel ? ('专家改判（预判「' + pre + '」）：' + this.reason) : ('确认「' + b.branchLabel + '」')
-      this.advance(b.branchLabel, note)
-      this.reason = ''
-    },
-    advance: function (label, note) {
-      this.log.push((this.step ? this.step.stepTitle : '') + ' → ' + (note || label))
-      var next = null
-      var branches = this.step ? this.step.branches : []
-      branches.forEach(function (b) { if (b.branchLabel === label) next = b.nextStepId })
-      if (next && this.flow) {
-        var found = this.flow.steps.filter(function (s) { return s.id === next })[0]
-        this.step = found || this.step
-        if (this.right === 'trial') this.evalStep()
-      }
-    },
-    autoRun: function () {
-      var self = this
-      if (!this.step && this.flow && this.flow.steps.length) this.step = this.flow.steps[0]
-      var guard = 0
-      var tick = function () {
-        if (!self.step || self.step.stepType === 'END' || guard++ > 20) return
-        self.evalStep().then(function (r) {
-          var recorded = self.event && self.event.answers ? self.event.answers[self.step.stepCode] : null
-          var label = (r && r.prejudgeLabel) || recorded || (self.step.branches[0] && self.step.branches[0].branchLabel)
-          if (!label) return
-          self.advance(label, '自动 ' + label)
-          tick()
-        })
-      }
-      tick()
+      if (!this.eventId) { this.event = null; return }
+      http.get('/api/trials/' + this.eventId).then(function (e) { self.event = e }).catch(this.fail)
     },
     onSvg: function (e) {
       var g = e.target.closest && e.target.closest('[data-id]')
@@ -881,6 +691,104 @@ export default {
     },
     conclLabel: function (c) {
       return { MAINTAIN: '维持运行', SPEED_LIMIT: '限速运行', RESCUE: '请求救援', RETURN_DEPOT: '回库处理' }[c] || c
+    },
+    goRel: function (dir) {
+      var i = this.stepPos + dir
+      if (!this.flow || i < 0 || i >= this.flow.steps.length) return
+      this.step = this.flow.steps[i]
+    },
+    openBrick: function (tab) {
+      this.brickTab = tab || 'param'
+      this.brick = true
+    },
+    cardKindLabel: function (k) {
+      return { NUM: '数值窗口', STATE: '状态量', FAULT: '关联故障' }[k] || k
+    },
+    paramOf: function (c) {
+      if (!c || !c.paramCol) return null
+      return this.params.filter(function (p) { return p.paramCol === c.paramCol })[0] || null
+    },
+    statOptions: function (c) {
+      return {
+        NUM: ['T0值', '最大', '最小', '平均', '首值', '末值', '变化量', '越限时长'],
+        STATE: ['T0值', '变位次数', '占用时长', '是否出现过'],
+        FAULT: ['出现次数', 'T0后再次出现']
+      }[c.cardKind] || []
+    },
+    hasStat: function (c, st) {
+      return String(c.statItems || '').split(',').map(function (s) { return s.trim() }).indexOf(st) >= 0
+    },
+    toggleStat: function (c, st, on) {
+      var arr = String(c.statItems || '').split(',').map(function (s) { return s.trim() }).filter(Boolean)
+      var i = arr.indexOf(st)
+      if (on && i < 0) arr.push(st)
+      if (!on && i >= 0) arr.splice(i, 1)
+      c.statItems = arr.join(',')
+      this.saveCard(c)
+    },
+    enumOptions: function (c) {
+      var out = []
+      String((c && c.enumDict) || '').split(';').forEach(function (part) {
+        var i = part.indexOf(':')
+        if (i > 0) out.push({ value: part.slice(0, i).trim(), label: part.slice(i + 1).trim() })
+      })
+      return out
+    },
+    /** 判断步骤的是/否、正常/异常预设，保留已有出口。 */
+    presetBranches: function (labels) {
+      var old = this.step.branches || []
+      this.step.branches = labels.map(function (label, i) {
+        var prev = old[i] || {}
+        return {
+          branchLabel: label,
+          nextStepId: prev.nextStepId || null,
+          condSrc: prev.condSrc || 'NONE',
+          condCardId: prev.condCardId || null,
+          condStat: prev.condStat || '',
+          condOp: prev.condOp || '',
+          condVal: prev.condVal || '',
+          condAtomId: prev.condAtomId || null,
+          condGroupId: prev.condGroupId || null
+        }
+      })
+    },
+    /**
+     * 把原子或命名组写到判断步骤的第一个人工分支，其余没有「否则」时补一条。
+     */
+    setBrickCond: function (a) {
+      if (!this.step || this.step.stepType !== 'JUDGE') {
+        this.$message.warning('请先打开一个判断步骤')
+        return
+      }
+      var list = this.step.branches || []
+      var b = null
+      for (var i = 0; i < list.length; i++) {
+        if (!list[i].condSrc || list[i].condSrc === 'NONE') { b = list[i]; break }
+      }
+      if (!b) b = list[0]
+      if (!b) { this.$message.warning('该步骤没有分支'); return }
+      b.condSrc = a.kind === 'atom' ? 'ATOM' : 'GROUP'
+      if (a.kind === 'atom') { b.condAtomId = a.id; b.condGroupId = null }
+      else { b.condGroupId = a.id; b.condAtomId = null }
+      var hasElse = list.some(function (x) { return x !== b && x.condSrc === 'ELSE' })
+      if (!hasElse) {
+        for (var j = 0; j < list.length; j++) {
+          if (list[j] !== b) {
+            list[j].condSrc = 'ELSE'
+            list[j].condCardId = null
+            list[j].condAtomId = null
+            list[j].condGroupId = null
+            break
+          }
+        }
+      }
+      this.stepTab = 'branch'
+      this.brick = false
+      var label = b.branchLabel
+      var self = this
+      this.saveBranches(true).then(function (d) {
+        if (d) self.$message.success('已设为「' + label + '」分支的判断条件')
+      })
     },
     fail: function (e) { if (e && e !== 'cancel' && e.message) this.$message.error(e.message) }
   }
@@ -943,7 +851,9 @@ export default {
 .lg { font-size:12px; padding:3px 0; border-bottom:1px dashed #f1f5f9; }
 .lt { display:inline-block; width:36px; color:#94a3b8; font-family:monospace; }
 .screen { margin-top:8px; background:#0f172a; color:#e2e8f0; padding:10px; border-radius:8px; }
-.brick { border-top:1px solid var(--line); margin-top:8px; max-height:240px; overflow:auto; }
+.note { background:#f8fafc; border-radius:6px; padding:6px 8px; margin:6px 0; color:#475569; font-size:12px; }
+.statrow { display:flex; flex-wrap:wrap; gap:4px 10px; margin:6px 0; }
+.bad { color:#b91c1c; }
 .row { display:flex; justify-content:space-between; gap:6px; align-items:center; }
 .empty { padding:24px; }
 </style>
