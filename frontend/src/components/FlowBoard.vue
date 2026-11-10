@@ -55,15 +55,20 @@
               <el-button type="text" @click="unbind(b)">×</el-button>
             </span>
           </div>
-          <div v-if="flow.errors.length" class="badbox">✕ {{ flow.errors.length }} 个问题（发布前必须清零）
-            <div v-for="(e,i) in flow.errors" :key="i">{{ e }}</div>
-          </div>
-          <div v-else class="okbox">✓ 校验通过：每个分支都有出口、无死循环、参数适用车型匹配、包含结束节点</div>
-          <div v-if="flow.warnings.length" class="warn">
-            <div v-for="(w,i) in flow.warnings" :key="'w'+i">⚠ {{ w }}</div>
-          </div>
-          <div v-for="(s,i) in flow.steps" :key="s.id" class="scard" :class="{on: step && step.id===s.id}" @click="step=s">
-            <div><b>{{ circ(i) }}</b> <span class="tag">{{ typeLabel(s.stepType) }}</span> {{ s.stepTitle }}</div>
+          <div v-if="!flow.errors.length && !flow.warnings.length" class="okbox">✓ 校验通过：每个分支都有出口、无死循环、参数适用车型匹配、包含结束节点</div>
+          <details v-else class="valbox" :class="flow.errors.length ? 'err' : 'warn'" :open="flow.errors.length > 0">
+            <summary>{{ flow.errors.length ? ('✕ ' + flow.errors.length + ' 个问题（发布前必须清零）') : '✓ 无阻断问题' }}<span v-if="flow.warnings.length"> ⚠ {{ flow.warnings.length }} 条提示</span></summary>
+            <ul>
+              <li v-for="(e,i) in flow.errors" :key="'e'+i" class="e">{{ e }}</li>
+              <li v-for="(w,i) in flow.warnings" :key="'w'+i" class="w">{{ w }}</li>
+            </ul>
+          </details>
+          <div v-for="(s,i) in flow.steps" :key="s.id" class="scard" :class="{on: step && step.id===s.id, over: dragOver===i}" @click="step=s"
+               @dragover.prevent="dragOver=i" @drop.stop.prevent="onDrop(i)">
+            <div class="row">
+              <span class="handle" draggable="true" title="拖拽排序" @dragstart.stop="onDragStart(i, $event)" @dragend="dragFrom=null; dragOver=null">⋮⋮</span>
+              <b>{{ circ(i) }}</b> <span class="tag">{{ typeLabel(s.stepType) }}</span> {{ s.stepTitle }}
+            </div>
             <div class="muted">{{ (s.roleCodes||[]).join(' / ') }} · 卡 {{ (s.cards||[]).length }}
               · <span v-for="b in s.branches" :key="b.id">{{ b.branchLabel }} → {{ b.nextStepCode || '未配置' }} </span>
               <span v-if="s.stepType==='END'">■ {{ conclLabel(s.conclusion) }}</span>
@@ -93,7 +98,8 @@
         <aside class="scroll pane">
           <el-tabs v-model="right">
             <el-tab-pane label="流程图" name="svg">
-              <div v-html="svg" @click="onSvg"></div>
+              <div class="row"><span class="muted">{{ legend }}</span><el-button size="mini" @click="flowBig=true">展开大图</el-button></div>
+              <div class="flowbox" v-html="svg" @click="onSvg"></div>
             </el-tab-pane>
             <el-tab-pane label="司机 / 专家视角" name="view">
               <div v-if="step">
@@ -241,6 +247,11 @@
       </el-checkbox-group>
       <span slot="footer"><el-button type="primary" @click="saveBind">保存绑定</el-button></span>
     </el-dialog>
+    <big-canvas :visible="flowBig" :title="flow ? ('处置流程图 · ' + flow.flowName) : ''"
+      :subtitle="flow ? (flow.bindings.length + ' 个绑定故障 · ' + flow.steps.length + ' 步 · ' + statusText) : ''"
+      :svg="svg" :legend="legend" :file-base="flow ? ('处置流程_' + flow.flowName) : '处置流程'"
+      :caption="flow ? flow.flowName : ''" hint="滚轮缩放 · 拖动平移 · 点击节点定位步骤 · Esc 关闭"
+      @close="flowBig=false" @node="goStep" />
     <el-dialog title="套用流程" :visible.sync="applyOpen" width="560px" append-to-body>
       <div v-for="t in flows" :key="t.id" class="fcard">
         <div>{{ t.isTemplate===1 ? '◆ ' : '' }}{{ t.flowName }}</div>
@@ -253,7 +264,8 @@
 
 <script>
 import http from '../api/http'
-import { flowSvg } from '../utils/flowSvg'
+import { flowSvg, FLOW_LEGEND } from '../utils/flowSvg'
+import BigCanvas from './BigCanvas.vue'
 import * as echarts from 'echarts'
 
 var TYPES = [
@@ -267,13 +279,14 @@ var CIRC = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'
 
 export default {
   name: 'FlowBoard',
+  components: { BigCanvas: BigCanvas },
   data: function () {
     return {
       faults: [], flows: [], tab: 'fault', q: '', sel: null, flow: null, step: null,
       right: 'svg', brick: false, brickQ: '', params: [],
       typeDlg: false, afterId: null, bindDlg: false, bindIds: [], applyOpen: false,
       events: [], eventId: null, event: null, evalResult: null, reason: '', log: [],
-      types: TYPES
+      types: TYPES, flowBig: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND
     }
   },
   computed: {
@@ -295,7 +308,9 @@ export default {
       if (this.flow.pubVerNo > 0) return '草稿 · 基于 v' + this.flow.pubVerNo
       return '草稿 · 未发布'
     },
-    svg: function () { return this.flow ? flowSvg(this.flow.steps) : '' },
+    svg: function () {
+      return this.flow ? flowSvg(this.flow.steps, { hl: this.step && this.step.id }) : ''
+    },
     stepOpen: {
       get: function () { return !!this.step },
       set: function (v) { if (!v) this.step = null }
@@ -606,10 +621,34 @@ export default {
     },
     onSvg: function (e) {
       var g = e.target.closest && e.target.closest('[data-id]')
-      if (!g || !this.flow) return
-      var id = Number(g.getAttribute('data-id'))
-      var found = this.flow.steps.filter(function (s) { return s.id === id })[0]
-      if (found) this.step = found
+      if (!g) return
+      this.goStep(g.getAttribute('data-id'))
+    },
+    goStep: function (id) {
+      if (!this.flow) return
+      var found = this.flow.steps.filter(function (s) { return String(s.id) === String(id) })[0]
+      if (found) {
+        this.step = found
+        this.flowBig = false
+      }
+    },
+    onDragStart: function (index, e) {
+      this.dragFrom = index
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(index))
+    },
+    onDrop: function (index) {
+      var from = this.dragFrom
+      this.dragFrom = null
+      this.dragOver = null
+      if (from == null || from === index) return
+      var ids = this.flow.steps.map(function (s) { return s.id })
+      var moved = ids.splice(from, 1)[0]
+      ids.splice(index, 0, moved)
+      var self = this
+      http.post('/api/flows/' + this.flow.id + '/steps/reorder', { rev: this.flow.rev, stepIds: ids }).then(function (d) {
+        self.flow = d
+      }).catch(this.fail)
     },
     esc: function () {
       if (this.brick) this.brick = false
@@ -640,7 +679,15 @@ export default {
 .fcard.active, .scard.on { border-color:#2563eb; background:#eff6ff; }
 .banner { background:#fffbeb; color:#b45309; padding:6px 8px; border-radius:6px; margin-bottom:6px; }
 .banner.purple { background:#faf5ff; color:#6d28d9; }
-.badbox { background:#fef2f2; color:#b91c1c; padding:8px; border-radius:8px; }
+.valbox { font-size:12px; border-radius:6px; padding:7px 10px; margin:8px 0; }
+.valbox.err { background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; }
+.valbox.warn { background:#fffbeb; border:1px solid #fde68a; color:#a16207; }
+.valbox summary { cursor:pointer; }
+.valbox .e { color:#b91c1c; }
+.valbox .w { color:#a16207; }
+.handle { cursor:grab; color:#94a3b8; padding:0 6px; letter-spacing:-1px; user-select:none; }
+.scard.over { box-shadow:inset 0 3px 0 #2563eb; }
+.flowbox { overflow:auto; border:1px solid var(--line); border-radius:8px; background:#fff; }
 .okbox { background:#f0fdf4; color:#15803d; padding:8px; border-radius:8px; }
 .fm { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .screen { margin-top:8px; background:#0f172a; color:#e2e8f0; padding:10px; border-radius:8px; }

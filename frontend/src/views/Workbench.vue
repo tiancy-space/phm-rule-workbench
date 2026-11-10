@@ -105,6 +105,14 @@
             </div>
           </div>
         </div>
+        <template v-if="draft.ruleMode==='DIRECT' || draft.ruleMode==='DISABLED'">
+          <div class="ck">
+            <h2>{{ modeLabel(draft.ruleMode) }}</h2>
+            <p>{{ draft.ruleMode==='DIRECT' ? '不执行故障组合条件，前置过滤通过后直接报出。' : '此故障已停止输出，不进入后续判定与报出流程。' }}</p>
+            <span class="muted">已有组合草稿会保留，切换回条件组合即可继续编辑。</span>
+          </div>
+        </template>
+        <template v-else>
         <h3>1 已引入的原子 / 命名组</h3>
         <div v-for="r in draft.refs" :key="r.alias" class="refrow">
           <b>{{ r.alias }}</b>
@@ -135,16 +143,22 @@
         </div>
         <div class="vizhead">
           <span class="muted">可视化逻辑结构</span>
-          <el-radio-group v-model="viz" size="mini">
-            <el-radio-button label="list">分组清单</el-radio-button>
-            <el-radio-button label="ladder">梯形图</el-radio-button>
-          </el-radio-group>
+          <div class="row">
+            <el-button v-if="viz==='ladder'" size="mini" @click="bigOpen=true">展开大图</el-button>
+            <el-button size="mini" @click="setNamed(true)">展开命名组</el-button>
+            <el-button size="mini" @click="setNamed(false)">折叠命名组</el-button>
+            <el-radio-group v-model="viz" size="mini">
+              <el-radio-button label="list">分组清单</el-radio-button>
+              <el-radio-button label="ladder">梯形图</el-radio-button>
+            </el-radio-group>
+          </div>
         </div>
         <div v-if="viz==='list'" class="ck">
           <div v-for="(line,i) in descLines" :key="i">{{ line }}</div>
           <div v-if="!descLines.length" class="muted">写好组合式后这里显示中文结构</div>
         </div>
-        <div v-else class="ladderbox" v-html="ladderHtml"></div>
+        <div v-else class="ladderbox" v-html="ladderHtml" @click="onLadder"></div>
+        <p v-if="viz==='ladder'" class="muted">左右为母线；串联触点＝同时满足（且），上下并联支路＝满足其一（或）；◆ 命名条件组点击可折叠 / 展开。</p>
         <el-tabs v-model="tab">
           <el-tab-pane label="中文判定逻辑释义" name="cn">
             <div v-if="draft.inheritedFilters && draft.inheritedFilters.length" class="muted">继承前置：</div>
@@ -183,6 +197,7 @@
             </div>
           </el-tab-pane>
         </el-tabs>
+        </template>
         <h3>◈ 通用前置规则 · 继承 {{ (draft.inheritedFilters||[]).length }} 项
           <el-button type="text" @click="skipOpen=!skipOpen">{{ skipOpen ? '收起' : '管理单条豁免' }}</el-button>
         </h3>
@@ -372,6 +387,13 @@
     </el-dialog>
 
     <flow-board v-if="$store.state.flowOpen" @close="reloadAfterFlow" />
+    <big-canvas :visible="bigOpen" :title="'故障 ' + (draft && draft.gzdm) + ' 梯形图'"
+      :subtitle="draft ? (draft.cx + ' / ' + draft.ly + ' / ' + draft.gzmc) : ''"
+      :svg="ladderHtml" legend="串联＝且，并联＝或，◆ 为命名组"
+      hint="滚轮缩放 · 拖动平移 · 点击命名组折叠 · + - F 0 · Esc 关闭"
+      :file-base="'故障' + (draft && draft.gzdm) + '_梯形图'"
+      :caption="draft ? (draft.cx + ' / ' + draft.gzdm + ' ' + draft.gzmc) : ''"
+      @close="bigOpen=false" @toggle="toggleNamed" />
   </div>
 </template>
 
@@ -379,6 +401,7 @@
 import http from '../api/http'
 import { ladderSvg, checklistLines } from '../utils/ladder'
 import FlowBoard from '../components/FlowBoard.vue'
+import BigCanvas from '../components/BigCanvas.vue'
 
 var MODES = [
   { value: 'CONDITIONAL', label: '条件组合判定' },
@@ -391,13 +414,13 @@ var WINS = ['allNotExists', 'anyExists', 'allExists', 'anyNotExists']
 
 export default {
   name: 'Workbench',
-  components: { FlowBoard: FlowBoard },
+  components: { FlowBoard: FlowBoard, BigCanvas: BigCanvas },
   data: function () {
     return {
       stats: null, faults: [], atoms: [], groups: [], params: [], pres: [],
       filters: { cx: '', mode: '', ly: '', cz: '', q: '' },
       draft: null, saved: '', preview: null, timer: null,
-      viz: 'list', tab: 'cn', skipOpen: false,
+      viz: 'list', tab: 'cn', skipOpen: false, namedOpen: {}, bigOpen: false,
       checkText: '', checkResult: null,
       simValues: {}, simWindowsState: {}, simResult: null,
       poolKind: 'atom', poolScope: 'FIT', poolQ: '',
@@ -436,7 +459,7 @@ export default {
       return checklistLines(this.preview && this.preview.ruleDesc)
     },
     ladderHtml: function () {
-      return this.preview && this.preview.display ? ladderSvg(this.preview.display, {}) : ''
+      return this.preview && this.preview.display ? ladderSvg(this.preview.display, this.namedOpen, this.draft && this.draft.gzdm) : ''
     },
     poolAtoms: function () {
       var q = (this.poolQ || '').toLowerCase()
@@ -581,6 +604,27 @@ export default {
     },
     reset: function () {
       if (this.draft) this.load(this.draft.id)
+    },
+    toggleNamed: function (code) {
+      if (!code) return
+      var next = Object.assign({}, this.namedOpen)
+      next[code] = next[code] === false
+      this.namedOpen = next
+    },
+    setNamed: function (open) {
+      var next = {}
+      var walk = function (n) {
+        if (!n) return
+        if (n.type === 'named' && n.code) next[n.code] = open
+        ;(n.children || []).forEach(walk)
+        walk(n.child)
+      }
+      if (this.preview && this.preview.display) walk(this.preview.display)
+      this.namedOpen = next
+    },
+    onLadder: function (e) {
+      var node = e.target.closest && e.target.closest('[data-code]')
+      if (node) this.toggleNamed(node.getAttribute('data-code'))
     },
     insert: function (token) { this.draft.ruleExpr = (this.draft.ruleExpr || '') + token },
     allAnd: function () { this.draft.ruleExpr = (this.draft.refs || []).map(function (r) { return r.alias }).join(' & ') },
