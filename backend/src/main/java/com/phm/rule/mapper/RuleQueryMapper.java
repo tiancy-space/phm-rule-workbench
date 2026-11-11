@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * 不适合用逻辑删除拦截的 SQL：含已删除行的查找、物理删除、以及与样例查询一致的前置规则加载。
- * 字符串拼接使用 CONCAT，避免写死某一种数据库的专用运算符。
+ * 字符串拼接用 ||。金仓 Oracle 模式下 CONCAT 会把无类型字面量解析成 sys.concat，报函数不存在；|| 在 PostgreSQL 和该模式都能用。
  */
 @Mapper
 public interface RuleQueryMapper {
@@ -46,7 +46,7 @@ public interface RuleQueryMapper {
      */
     @Select("SELECT p.* FROM t_phm_pre_filter_rule p, t_phm_fault_rule f "
             + "WHERE f.id = #{faultId} AND f.del_flag = 0 AND p.is_enabled = 1 AND p.del_flag = 0 "
-            + "AND (p.scope_cx = 'ALL' OR CONCAT(',', p.scope_cx, ',') LIKE CONCAT('%,', f.cx, ',%')) "
+            + "AND (p.scope_cx = 'ALL' OR (',' || p.scope_cx || ',') LIKE ('%,' || f.cx || ',%')) "
             + "AND (p.scope_ly = 'ALL' OR p.scope_ly = f.ly) "
             + "AND NOT EXISTS (SELECT 1 FROM t_phm_fault_pre_skip k "
             + "WHERE k.fault_rule_id = f.id AND k.filter_id = p.id AND k.del_flag = 0) "
