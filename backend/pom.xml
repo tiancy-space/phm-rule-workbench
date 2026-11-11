@@ -110,4 +110,24 @@
             </plugin>
         </plugins>
     </build>
+
+    <!--
+      本地金仓驱动。默认构建（Render Docker、mvn test）不激活，也不下载这个 jar。
+      jar 不在 Maven 中央仓库，先装进本地仓库再带 -Pkingbase：
+      mvn install:install-file -Dfile=kingbase8-8.6.0.jar -DgroupId=cn.com.kingbase -DartifactId=kingbase8 -Dversion=8.6.0 -Dpackaging=jar
+      驱动类名仍是 com.kingbase8.Driver，和 groupId 不是同一个字符串。
+    -->
+    <profiles>
+        <profile>
+            <id>kingbase</id>
+            <dependencies>
+                <dependency>
+                    <groupId>cn.com.kingbase</groupId>
+                    <artifactId>kingbase8</artifactId>
+                    <version>8.6.0</version>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>

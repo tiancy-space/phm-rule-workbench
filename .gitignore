@@ -12,6 +12,10 @@ frontend/.cache/
 **/.env.*
 !**/.env.example
 
+# 本地金仓口令。application-kingbase.yml 只含占位符，可以提交。
+application-local*.yml
+**/application-local*.yml
+
 # IDE
 .idea/
 *.iml

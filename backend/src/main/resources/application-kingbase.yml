@@ -1,0 +1,13 @@
+# 本地人大金仓 V8R6（database_mode=oracle）示例。
+# 只放占位符，不放真实口令。复制成 application-local.yml 再填自己的账号，该文件已被 git 忽略。
+# 启动前先按 docs/部署说明.md 把 kingbase8-8.6.0.jar 装进本地 Maven，并用 mvn -Pkingbase 启动。
+# IDEA：Active profiles 填 kingbase；环境变量按下面的默认值改成自己的库。
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:kingbase8://127.0.0.1:54321/phm_rule?currentSchema=phm_main}
+    username: ${DB_USERNAME:system}
+    password: ${DB_PASSWORD:}
+    driver-class-name: ${DB_DRIVER:com.kingbase8.Driver}
+
+app:
+  db-type: ${DB_TYPE:kingbase_es}
