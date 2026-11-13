@@ -151,18 +151,44 @@
       </template>
     </proto-modal>
 
-    <el-dialog :title="host.groupDlg && host.groupDlg.id ? '编辑命名条件组' : '新建命名组'" :visible.sync="host.groupVisible" width="680px" custom-class="proto-dialog">
-      <el-form v-if="host.groupDlg" label-width="100px" size="small">
-        <el-form-item label="组名称"><el-input v-model="host.groupDlg.groupName" /></el-form-item>
-        <el-form-item label="适用车型"><el-input v-model="host.groupDlg.scopeCx" /></el-form-item>
-        <el-form-item label="插入原子">
-          <button type="button" class="small" v-for="a in host.atoms" :key="a.id" @click="host.groupDlg.groupExpr = (host.groupDlg.groupExpr || '') + a.atomCode + ' '">{{ a.atomCode }}</button>
-        </el-form-item>
-        <el-form-item label="组合式"><el-input type="textarea" :rows="3" v-model="host.groupDlg.groupExpr" @input="host.previewGroup()" /></el-form-item>
+    <proto-modal wide :visible="!!host.groupDlg" :title="groupTitle" @close="host.groupDlg = null">
+      <form v-if="host.groupDlg" @submit.prevent="host.saveGroup()">
+        <div v-if="groupUsage && groupUsage.faults && groupUsage.faults.length" class="warning">
+          该命名组已被 {{ groupUsage.faults.length }} 条故障引用，保存后所有引用方的展开表达式同步更新。<br>
+          {{ usageFaults(groupUsage) }}
+        </div>
+        <div class="cols2">
+          <label class="field">组名称（业务说法，组内唯一）
+            <el-input v-model="host.groupDlg.groupName" placeholder="如 机车在运行" />
+          </label>
+          <label class="field">适用车型
+            <el-select v-model="host.groupDlg.scopeCx">
+              <el-option v-for="c in groupScopes" :key="c" :label="c === 'ALL' ? 'ALL 全部车型' : c" :value="c" />
+            </el-select>
+          </label>
+        </div>
+        <div class="field" style="margin-bottom:6px">① 点击原子插入组合式（以原子编号 R001… 引用，命名组内不再嵌套命名组）</div>
+        <input v-model="groupAtomQ" class="full" placeholder="⌕ 按中文 / 编号 / 参数筛选原子">
+        <div class="grouppicker">
+          <button v-for="a in groupAtoms" :key="a.id" type="button" class="pick" @click="insertGroupToken(a.atomCode)">
+            <span class="mono">{{ a.atomCode }}</span> {{ a.atomName }}
+          </button>
+        </div>
+        <div class="field" style="margin:10px 0 6px">② 编排组合式</div>
+        <div class="toolbar">
+          <button type="button" @click="insertGroupToken(' & ')">且 (&amp;)</button>
+          <button type="button" @click="insertGroupToken(' | ')">或 (|)</button>
+          <button type="button" @click="insertGroupToken('(')">左括号 (</button>
+          <button type="button" @click="insertGroupToken(')')">右括号 )</button>
+        </div>
+        <el-input ref="gexpr" type="textarea" :rows="3" class="expr" v-model="host.groupDlg.groupExpr" placeholder="(R001 & R002) | (R003 & R002)" @input="host.previewGroup()" />
         <group-preview :preview="host.groupPreview" :name="host.groupDlg.groupName" />
-      </el-form>
-      <span slot="footer"><button type="button" class="primary" @click="host.saveGroup()">保存命名组</button></span>
-    </el-dialog>
+      </form>
+      <template slot="footer">
+        <button type="button" @click="host.groupDlg = null">取消</button>
+        <button type="button" class="primary" @click="host.saveGroup()">保存命名组</button>
+      </template>
+    </proto-modal>
 
     <el-dialog title="新增故障条目" :visible.sync="host.faultDlg" width="480px" custom-class="proto-dialog">
       <el-form label-width="90px" size="small">
@@ -204,6 +230,7 @@ export default {
   name: 'WorkbenchDialogs',
   components: { GroupPreview: GroupPreview, ProtoModal: ProtoModal },
   props: { host: { type: Object, required: true } },
+  data: function () { return { groupAtomQ: '' } },
   computed: {
     /** 车型勾选：ALL 在前，再加底账里出现过的车型，以及当前值里多出来的车型。 */
     scopeModels: function () {
@@ -271,7 +298,38 @@ export default {
       if (op === 'IN' || op === 'NOT IN' || op === '=~') unit += ' · 支持集合或正则'
       return unit
     },
-    quickCodes: function () { return ['1873', '1874', '1031', '1742'] }
+    quickCodes: function () { return ['1873', '1874', '1031', '1742'] },
+    groupTitle: function () {
+      var g = this.host.groupDlg
+      if (!g) return ''
+      if (!g.id) return '新建命名条件组'
+      var row = (this.host.groups || []).filter(function (x) { return x.id === g.id })[0]
+      return '编辑命名条件组 · ' + ((row && row.groupCode) || g.id)
+    },
+    groupUsage: function () {
+      var g = this.host.groupDlg
+      if (!g || !g.id) return null
+      return (this.host.usage || {})['g' + g.id] || null
+    },
+    groupScopes: function () {
+      var set = { ALL: 1 }
+      ;(this.host.cxOptions || []).forEach(function (c) { if (c) set[c] = 1 })
+      var cur = this.host.groupDlg && this.host.groupDlg.scopeCx
+      if (cur) set[cur] = 1
+      return Object.keys(set).sort(function (a, b) {
+        if (a === 'ALL') return -1
+        if (b === 'ALL') return 1
+        return a < b ? -1 : a > b ? 1 : 0
+      })
+    },
+    /** 成员原子列表。只展示原子，命名组不能再套命名组。 */
+    groupAtoms: function () {
+      var q = (this.groupAtomQ || '').toLowerCase()
+      return (this.host.atoms || []).filter(function (a) {
+        if (!q) return true
+        return (a.atomCode + ' ' + (a.atomName || '') + ' ' + (a.paramCol || '') + ' ' + (a.atomExpr || '')).toLowerCase().indexOf(q) >= 0
+      })
+    }
   },
   methods: {
     timing: timingLabel,
@@ -281,6 +339,29 @@ export default {
     /** 点一下把故障代码补进逗号串，已有的不重复。 */
     usageFaults: function (usage) {
       return ((usage && usage.faults) || []).map(function (f) { return f.cx + '/' + f.gzdm }).join('、')
+    },
+    /**
+     * 在光标处插入原子编号或且/或/括号。前面已有内容且不是运算符时，原子前自动补「且」。
+     * 组合式文本仍交给原来的预览和保存接口。
+     */
+    insertGroupToken: function (token) {
+      var dlg = this.host.groupDlg
+      if (!dlg) return
+      var input = this.$refs.gexpr
+      var el = input && (input.$refs.textarea || input.$refs.input)
+      var value = dlg.groupExpr || ''
+      var start = el && el.selectionStart != null ? el.selectionStart : value.length
+      var end = el && el.selectionEnd != null ? el.selectionEnd : start
+      var piece = token
+      if (/^R\d+/.test(token) && value.slice(0, start).trim() && !/[&|(]\s*$/.test(value.slice(0, start))) piece = ' & ' + token
+      dlg.groupExpr = value.slice(0, start) + piece + value.slice(end)
+      this.host.previewGroup()
+      var pos = start + piece.length
+      this.$nextTick(function () {
+        if (!el) return
+        el.focus()
+        if (el.setSelectionRange) el.setSelectionRange(pos, pos)
+      })
     },
     pickCode: function (code) {
       var dlg = this.host.atomDlg
