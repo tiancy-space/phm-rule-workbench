@@ -2,7 +2,7 @@
   <div v-if="visible" class="overlay" @click.self="$emit('close')">
     <div class="modal wide">
       <div class="modalhead">
-        <h2>原子规则库 · 全量视图</h2>
+        <h2>共享原子规则库 · 全量视图</h2>
         <button type="button" class="close" @click="$emit('close')">×</button>
       </div>
       <div class="modalbody">
@@ -15,14 +15,22 @@
           <article v-for="a in rows" :key="a.id" class="poolcard">
             <div class="between">
               <span class="mono hint">{{ a.atomCode }}</span>
-              <span class="badge">{{ a.scopeCx === 'ALL' ? 'ALL 通用' : a.scopeCx }}</span>
+              <span class="row" style="gap:4px">
+                <span class="badge">{{ a.scopeCx === 'ALL' ? 'ALL 通用' : a.scopeCx }}</span>
+                <span class="badge">{{ a.atomType === 'WINDOW' ? '时间窗关联' : '参数比较' }}</span>
+              </span>
             </div>
             <div class="title">{{ a.atomName }}</div>
             <div class="raw mono">{{ a.atomExpr }}</div>
             <button type="button" class="link small" @click="$emit('refs', 'atom', a.id)">{{ usageText('atom', a.id) }}</button>
             <div class="poolfoot">
-              <span class="badge">{{ a.atomType === 'WINDOW' ? '时间窗关联' : '参数比较' }}</span>
-              <button type="button" class="link small danger" @click="$emit('remove', a)">删除</button>
+              <button type="button" class="small" :class="{ primary: !aliasOf(a.atomCode) }" :disabled="!!aliasOf(a.atomCode)" @click="$emit('use', a)">
+                {{ aliasOf(a.atomCode) ? ('✓ 已引用为 ' + aliasOf(a.atomCode)) : '＋ 引用到当前故障' }}
+              </button>
+              <span>
+                <button type="button" class="link small" @click="$emit('edit', a)">编辑</button>
+                <button type="button" class="link small danger" @click="$emit('remove', a)">删除</button>
+              </span>
             </div>
           </article>
         </div>
@@ -52,7 +60,15 @@ export default {
     rows: { type: Array, default: function () { return [] } },
     groups: { type: Array, default: function () { return [] } },
     q: { type: String, default: '' },
+    refs: { type: Array, default: function () { return [] } },
     usageText: { type: Function, required: true }
+  },
+  methods: {
+    /** 当前故障里这个原子的局部代号，没有就是还没引用。 */
+    aliasOf: function (code) {
+      var hit = (this.refs || []).filter(function (r) { return r.code === code })[0]
+      return hit ? hit.alias : ''
+    }
   }
 }
 </script>

@@ -2,16 +2,16 @@
   <header class="top">
     <div class="topline">
       <div class="brand">
-        <div class="logo">机</div>
+        <div class="logo" aria-hidden="true">▥</div>
         <div>
           <h1>机车 PHM 故障规则管理工作台</h1>
-          <div class="sub">规则按车型 + 来源 + 故障代码维护，表达式在服务端解析</div>
+          <div class="sub">故障诊断 / 规则配置　<span class="highlight">可视化编排工作台</span>　<span class="badge blue">交互原型 V5</span></div>
         </div>
       </div>
       <div class="actions">
         <button type="button" @click="$emit('pre')">通用前置故障规则（{{ enabledPre }} 条生效）</button>
         <button type="button" @click="$emit('flow')">▤ 处置流程管理</button>
-        <button type="button" @click="$emit('library')">原子规则库全量视图</button>
+        <button type="button" @click="$emit('library')">原子规则库全量视图 ↗</button>
       </div>
     </div>
     <div class="between">
@@ -21,7 +21,7 @@
         <span class="stat">直接报出 <b>{{ stats.direct }}</b></span>
         <span class="stat">停用 <b>{{ stats.disabled }}</b></span>
         <span class="stat">共享原子 <b>{{ stats.atoms }}</b></span>
-        <span class="stat">命名组 <b>{{ stats.groups }}</b></span>
+        <span class="stat">命名条件组 <b>{{ stats.groups }}</b></span>
         <span class="stat">处置流程 <b>{{ stats.flows }}</b></span>
         <span class="stat">生效前置 <b>{{ stats.enabledPres }}</b></span>
       </div>

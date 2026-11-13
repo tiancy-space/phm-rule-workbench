@@ -2,16 +2,17 @@
   <div class="mask" @keydown.esc="esc">
     <div class="board">
       <header class="bhead">
-        <b>处置流程管理</b>
+        <div>
+          <b>处置流程管理</b>
+          <div class="hint">粒度：车型＋来源＋故障代码 · 五类步骤（查看 / 判断 / 操作 / 联络上报 / 结束）· 司机 / 专家 / 系统协同</div>
+        </div>
         <el-button type="text" @click="$emit('close')">× 关闭</el-button>
       </header>
       <div class="bcols" :class="{ wide: right === 'view' || right === 'trial' }">
         <aside class="scroll pane">
-          <div class="between">
-            <el-radio-group v-model="tab" size="mini">
-              <el-radio-button label="fault">故障 {{ actionable.length }}</el-radio-button>
-              <el-radio-button label="tpl">通用模板 {{ templates.length }}</el-radio-button>
-            </el-radio-group>
+          <div class="seg">
+            <button type="button" :class="{ active: tab === 'fault' }" @click="tab = 'fault'">故障 {{ actionable.length }}</button>
+            <button type="button" :class="{ active: tab === 'tpl' }" @click="tab = 'tpl'">通用模板 {{ templates.length }}</button>
           </div>
           <div class="row" style="margin:6px 0">
             <select v-model="flowCx" class="mini">
@@ -25,12 +26,18 @@
               <option value="NONE">未配置</option>
             </select>
           </div>
-          <el-input v-model="q" size="mini" placeholder="搜索" clearable style="margin:6px 0" />
+          <input v-model="q" placeholder="⌕ 搜索故障代码 / 名称 / 模板" style="width:100%;margin:6px 0" />
           <template v-if="tab==='fault'">
             <div v-for="f in faultRows" :key="f.id" class="flitem" :class="{sel: sel && sel.type==='fault' && sel.faultId===f.id}" @click="selectFault(f)">
-              <div class="between"><b class="flcode">{{ f.gzdm }}</b> <span class="cztag" :class="'cz-'+(f.czdj||'').toLowerCase()">{{ f.czdj==='CHECK'?'排查':'关注' }}</span></div>
+              <div class="between">
+                <b class="flcode">{{ f.gzdm }}</b>
+                <span class="row" style="gap:4px">
+                  <span class="cztag" :class="'cz-'+(f.czdj||'').toLowerCase()">{{ f.czdj==='CHECK'?'排查':(f.czdj==='WATCH'?'关注':'无需干预') }}</span>
+                  <span class="badge">{{ f.cx }}</span>
+                  <span class="badge blue">{{ f.ly }}</span>
+                </span>
+              </div>
               <div class="flname">{{ f.gzmc }}</div>
-              <div class="muted">{{ f.cx }} · {{ f.ly }}</div>
               <div v-if="f.flowId"><span class="stpill" :class="f.flowStatus==='PUBLISHED'?'pub':'draft'">{{ f.flowStatus==='PUBLISHED' ? ('已发布 v'+f.pubVerNo) : '草稿' }} · {{ f.stepCount }} 步</span></div>
               <div v-else class="unset">○ 未配置处置流程</div>
             </div>
@@ -98,7 +105,7 @@
             <div class="sacts">
               <button type="button" class="link small" @click.stop="moveStep(i, -1)">上移</button>
               <button type="button" class="link small" @click.stop="moveStep(i, 1)">下移</button>
-              <button type="button" class="link small" @click.stop="addStep(s.id)">插入</button>
+              <button type="button" class="link small" @click.stop="addStep(s.id)">＋插入</button>
               <button type="button" class="link small" @click.stop="copyStep(s)">复制</button>
               <button type="button" class="link small danger" @click.stop="delStep(s)">删除</button>
             </div>

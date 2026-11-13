@@ -28,20 +28,25 @@
           <button type="button" :class="{ active: filters.cz === 'WATCH' }" @click="set('cz', 'WATCH')"><i class="czdot cz-watch"></i>关注 <b>{{ count('WATCH') }}</b></button>
           <button type="button" :class="{ active: filters.cz === 'NONE' }" @click="set('cz', 'NONE')"><i class="czdot cz-none"></i>无需干预 <b>{{ count('NONE') }}</b></button>
         </div>
-        <input :value="filters.q" placeholder="搜索故障代码 / 名称 / 模型" @input="set('q', $event.target.value)" />
+        <input :value="filters.q" placeholder="⌕ 搜索故障代码 / 名称 / 模型" @input="set('q', $event.target.value)" />
       </div>
     </div>
     <div class="scroll">
       <div v-for="f in rows" :key="f.id" class="fault" :class="{ selected: currentId === f.id }" tabindex="0" @click="$emit('pick', f)">
         <div class="between">
           <b class="code">{{ f.gzdm }}</b>
-          <span class="cztag" :class="'cz-' + (f.czdj || '').toLowerCase()">{{ czLabel(f.czdj) }}</span>
+          <span class="row" style="gap:4px">
+            <span class="cztag" :class="'cz-' + (f.czdj || '').toLowerCase()">{{ czLabel(f.czdj) }}</span>
+            <span class="badge">{{ f.cx }}</span>
+            <span class="badge blue">{{ f.ly }}</span>
+          </span>
         </div>
         <div class="name">{{ f.gzmc }}</div>
-        <div class="model">{{ f.cx }} · {{ f.ly }} · 健康 {{ f.jkdj }} · {{ modeLabel(f.ruleMode) }}<template v-if="f.ruleMode === 'CONDITIONAL'"> · {{ f.refCount }} 个条件</template></div>
-        <div class="status" :class="{ disabled: !f.flowId, pending: f.flowStatus !== 'PUBLISHED' }">
+        <div class="model">模型 · {{ f.mxmc || '未维护模型' }} · 健康 {{ f.jkdj }}</div>
+        <div class="status" :class="{ disabled: !f.flowId, pending: f.flowId && f.flowStatus !== 'PUBLISHED' }">
+          <span>{{ modeShort(f) }}</span>
           <span v-if="f.flowId" class="stpill" :class="f.flowStatus === 'PUBLISHED' ? 'pub' : 'draft'">{{ f.flowStatus === 'PUBLISHED' ? ('处置流程 v' + f.pubVerNo) : '处置流程 草稿' }}</span>
-          <span v-else>未配置处置流程</span>
+          <span v-else-if="f.czdj !== 'NONE'">未配置处置流程</span>
           <span v-if="f.skipCount" class="badge">前置豁免 {{ f.skipCount }}</span>
         </div>
       </div>
@@ -70,6 +75,14 @@ export default {
     },
     count: function (cz) { return this.faults.filter(function (f) { return f.czdj === cz }).length },
     czLabel: function (v) { return { CHECK: '排查', WATCH: '关注', NONE: '无需干预' }[v] || v },
+    /** 列表上用短说法，和原型故障卡同一行密度。 */
+    modeShort: function (f) {
+      if (f.ruleMode === 'CONDITIONAL') return '组合 · ' + (f.refCount || 0) + ' 个条件'
+      if (f.ruleMode === 'DIRECT') return '直接报出'
+      if (f.ruleMode === 'DISABLED') return '停用'
+      if (f.ruleMode === 'PENDING') return '待配置'
+      return this.modeLabel(f.ruleMode)
+    },
     modeLabel: function (v) {
       var m = this.modes.filter(function (x) { return x.value === v })[0]
       return m ? m.label : v

@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-drawer title="通用前置故障规则" :visible.sync="host.preOpen" size="460px" custom-class="proto-drawer">
+    <el-drawer title="通用前置故障规则" :visible.sync="host.preOpen" size="610px" custom-class="proto-drawer">
       <div style="padding:0 16px 16px">
         <div class="note">前置先于组合执行，任一未通过即拦截。范围和执行时机可配置，此处是沙盒，不会改现网。</div>
         <button type="button" class="primary" style="width:100%" @click="host.preForm = host.freshPre()">＋ 新增前置规则</button>

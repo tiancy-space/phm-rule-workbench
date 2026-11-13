@@ -35,6 +35,7 @@
       <div class="czdesc">
         <span class="cztag" :class="'cz-' + (draft.czdj || '').toLowerCase()">{{ czLabel(draft.czdj) }}</span>
         {{ czDesc(draft.czdj) }}
+        <span class="hint">固定配置，不随规则条件变化；独立于健康等级</span>
         <span v-if="dirty" class="badge amber">保存后生效</span>
         <div class="flowentry">
           <template v-if="draft.czdj === 'NONE'">无需干预类故障不配处置流程</template>

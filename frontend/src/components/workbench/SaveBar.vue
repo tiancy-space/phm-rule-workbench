@@ -1,6 +1,6 @@
 <template>
   <div class="savebar">
-    <span :class="dirty ? 'dirty' : 'ok'">{{ dirty ? '● 未保存修改' : '✓ 已保存' }}</span>
+    <span :class="dirty ? 'dirty' : 'ok'">{{ dirty ? '● 未保存修改' : '✓ 已保存到本地' }}</span>
     <div class="row">
       <button type="button" @click="$emit('reset')">重置修改</button>
       <button type="button" class="primary" @click="$emit('save')">保存当前故障规则</button>

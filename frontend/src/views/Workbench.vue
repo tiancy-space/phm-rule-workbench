@@ -6,6 +6,15 @@
         :cx-options="cxOptions" :modes="modeOptions" :current-id="draft && draft.id"
         @filter="filters = $event" @pick="pick" @create="faultDlg = true" />
       <section class="panel" v-if="draft">
+        <div class="ph">
+          <div class="between">
+            <div>
+              <div class="step">02 / 组合规则编排</div>
+              <h2>故障判定工作区</h2>
+            </div>
+            <span class="hint">共享原子 · 局部代号 · 自由组合</span>
+          </div>
+        </div>
         <div class="centerbody">
           <fault-header-card :draft="draft" :modes="modeOptions" :dirty="dirty" @flow="openFlow" />
           <template v-if="draft.ruleMode === 'DIRECT' || draft.ruleMode === 'DISABLED'">
@@ -66,8 +75,9 @@
         <save-bar :dirty="dirty" @reset="reset" @save="save" />
       </section>
       <section v-else class="panel"><div class="empty">选择左侧故障开始维护</div></section>
-      <atom-pool-panel :kind="poolKind" :scope="poolScope" :type="poolType" :q="poolQ"
+      <atom-pool-panel :kind="poolKind" :scope="poolScope" :type="poolType" :q="poolQ" :cx="draft && draft.cx"
         :atoms="atoms" :groups="groups" :atom-rows="poolAtoms" :group-rows="poolGroups" :used-codes="usedCodes"
+        :refs="draft && draft.refs"
         :usage-text="usageText"
         @kind="poolKind = $event" @scope="poolScope = $event" @type="poolType = $event" @q="poolQ = $event"
         @create="poolKind === 'atom' ? (atomDlg = freshAtom()) : (groupDlg = freshGroup())"
@@ -75,12 +85,13 @@
         @refs="showRef" />
     </div>
     <footer class="pagefoot">
-      <span>数据来源：参数元数据、原子规则与故障底账。零 JSON 表达式只在服务端解析。</span>
-      <span>本地保存 · Ctrl + S</span>
+      <span>数据来源：参数元数据、原子规则与故障底账。零 JSON 表达式只在服务端解析。仅维护样例，不代表现网全量。</span>
+      <span>本地保存 · 快捷键 Ctrl / ⌘ + S</span>
     </footer>
     <atom-library-modal :visible="library" :rows="libraryRows" :groups="libraryGroups" :q="libraryQ"
-      :usage-text="usageText" @close="library = false" @q="libraryQ = $event"
-      @create="atomDlg = freshAtom()" @remove="removeAtom" @refs="showRef" />
+      :refs="draft && draft.refs" :usage-text="usageText" @close="library = false" @q="libraryQ = $event"
+      @create="atomDlg = freshAtom()" @remove="removeAtom" @refs="showRef"
+      @use="useAtom" @edit="atomDlg = editAtom($event)" />
     <workbench-dialogs :host="this" />
     <flow-board v-if="$store.state.flowOpen" @close="reloadAfterFlow" />
     <big-canvas :visible="bigOpen" :title="'故障 ' + (draft && draft.gzdm) + ' 梯形图'"
