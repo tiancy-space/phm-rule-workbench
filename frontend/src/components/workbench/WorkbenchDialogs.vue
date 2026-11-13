@@ -80,37 +80,76 @@
       </template>
     </proto-modal>
 
-    <el-dialog :title="host.atomDlg && host.atomDlg.id ? '编辑原子规则' : '新建原子规则'" :visible.sync="host.atomVisible" width="560px" custom-class="proto-dialog">
-      <el-form v-if="host.atomDlg" label-width="120px" size="small">
-        <el-form-item label="原子类型">
-          <el-radio-group v-model="host.atomDlg.atomType">
-            <el-radio label="PARAM">参数测点比较</el-radio>
-            <el-radio label="WINDOW">关联故障时间窗</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="适用车型"><el-input v-model="host.atomDlg.scopeCx" placeholder="ALL 或车型" /></el-form-item>
-        <template v-if="host.atomDlg.atomType === 'PARAM'">
-          <el-form-item label="协议参数">
-            <el-select v-model="host.atomDlg.paramCol" filterable style="width:100%">
-              <el-option v-for="p in host.params" :key="p.paramCol + p.id" :label="p.paramName + ' ' + p.paramCol" :value="p.paramCol" />
+    <proto-modal :visible="!!host.atomDlg" :title="atomTitle" @close="host.atomDlg = null">
+      <form v-if="host.atomDlg" @submit.prevent="host.saveAtom()">
+        <div v-if="atomUsage && atomUsage.faults && atomUsage.faults.length" class="warning">
+          当前原子规则已被 {{ atomUsage.faults.length }} 条故障代码共享引用，保存修改后将自动同步更新所有引用方的展开表达式。<br>
+          {{ usageFaults(atomUsage) }}
+        </div>
+        <div class="cols2">
+          <label class="field">原子类型
+            <el-select v-model="host.atomDlg.atomType">
+              <el-option label="参数测点比较" value="PARAM" />
+              <el-option label="关联故障时间窗" value="WINDOW" />
             </el-select>
-          </el-form-item>
-          <el-form-item label="比较符">
-            <el-select v-model="host.atomDlg.cmpOp" style="width:100%"><el-option v-for="o in host.ops" :key="o" :label="o" :value="o" /></el-select>
-          </el-form-item>
-          <el-form-item label="目标值"><el-input v-model="host.atomDlg.cmpVal" placeholder="缺失值写 -" /></el-form-item>
+          </label>
+          <label class="field">适用车型
+            <el-select v-model="host.atomDlg.scopeCx">
+              <el-option v-for="c in atomScopes" :key="c" :label="c === 'ALL' ? 'ALL 全部车型' : c" :value="c" />
+            </el-select>
+          </label>
+        </div>
+        <template v-if="host.atomDlg.atomType === 'PARAM'">
+          <label class="field">V3 协议参数元数据
+            <el-select v-model="host.atomDlg.paramCol" filterable placeholder="按中文名 / 编码检索协议参数">
+              <el-option v-for="p in host.params" :key="p.paramCol + p.id" :label="p.paramName + ' · ' + p.paramCol + (p.dataSource ? ' · ' + p.dataSource : '') + (p.unit ? ' · ' + p.unit : '')" :value="p.paramCol" />
+            </el-select>
+          </label>
+          <div v-if="atomParam" class="note">
+            <b>{{ atomParam.paramName }}</b> · <code>{{ atomParam.paramCol }}</code><br>
+            数据源 {{ atomParam.dataSource || '—' }}　单位 {{ atomParam.unit || '无' }}
+          </div>
+          <div class="cols2">
+            <label class="field">比较符
+              <el-select v-model="host.atomDlg.cmpOp">
+                <el-option v-for="o in host.ops" :key="o" :label="o === '=~' ? '=~ 正则匹配' : o" :value="o" />
+              </el-select>
+            </label>
+            <label class="field">目标值
+              <el-select v-if="atomEnums.length" v-model="host.atomDlg.cmpVal">
+                <el-option v-for="e in atomEnums" :key="e.value" :label="e.value + ' : ' + e.label" :value="e.value" />
+              </el-select>
+              <el-input v-else v-model="host.atomDlg.cmpVal" :placeholder="cmpPlaceholder" />
+              <span class="hint">{{ cmpHint }}</span>
+            </label>
+          </div>
         </template>
         <template v-else>
-          <el-form-item label="时间窗函数">
-            <el-select v-model="host.atomDlg.winFn" style="width:100%"><el-option v-for="f in host.winFns" :key="f" :label="f" :value="f" /></el-select>
-          </el-form-item>
-          <el-form-item label="窗口秒数"><el-input-number v-model="host.atomDlg.winSec" :min="1" /></el-form-item>
-          <el-form-item label="关联故障代码"><el-input v-model="host.atomDlg.relGzdm" placeholder="逗号分隔" /></el-form-item>
+          <label class="field">时间窗函数
+            <el-select v-model="host.atomDlg.winFn">
+              <el-option v-for="f in host.winFns" :key="f" :label="f + ' · ' + winFnLabel(f)" :value="f" />
+            </el-select>
+          </label>
+          <label class="field">同车事件窗口（秒）
+            <el-input-number v-model="host.atomDlg.winSec" :min="1" />
+          </label>
+          <label class="field">关联故障代码（英文逗号分隔）
+            <el-input v-model="host.atomDlg.relGzdm" placeholder="如 1873,1874" />
+          </label>
+          <div class="toolbar">
+            <button v-for="c in quickCodes" :key="c" type="button" @click="pickCode(c)">＋ {{ c }}</button>
+          </div>
         </template>
-        <el-form-item label="名称"><el-input v-model="host.atomDlg.atomName" placeholder="留空则自动生成" /></el-form-item>
-      </el-form>
-      <span slot="footer"><button type="button" class="primary" @click="host.saveAtom()">保存共享定义</button></span>
-    </el-dialog>
+        <label class="field">原子规则名称（留空自动生成）
+          <el-input v-model="host.atomDlg.atomName" placeholder="根据中文参数与阈值自动生成" />
+        </label>
+        <p v-if="!host.atomDlg.id" class="hint">新建后自动加入当前故障组合，记得再保存故障规则。</p>
+      </form>
+      <template slot="footer">
+        <button type="button" @click="host.atomDlg = null">取消</button>
+        <button type="button" class="primary" @click="host.saveAtom()">保存共享定义</button>
+      </template>
+    </proto-modal>
 
     <el-dialog :title="host.groupDlg && host.groupDlg.id ? '编辑命名条件组' : '新建命名组'" :visible.sync="host.groupVisible" width="680px" custom-class="proto-dialog">
       <el-form v-if="host.groupDlg" label-width="100px" size="small">
@@ -176,10 +215,80 @@ export default {
         if (b === 'ALL') return 1
         return a < b ? -1 : a > b ? 1 : 0
       })
-    }
+    },
+    /** 标题带原子编号，和原型「编辑共享原子规则 · R00x」一致。 */
+    atomTitle: function () {
+      var a = this.host.atomDlg
+      if (!a) return ''
+      if (!a.id) return '新建原子规则'
+      var row = (this.host.atoms || []).filter(function (x) { return x.id === a.id })[0]
+      return '编辑共享原子规则 · ' + ((row && row.atomCode) || a.id)
+    },
+    atomUsage: function () {
+      var a = this.host.atomDlg
+      if (!a || !a.id) return null
+      return (this.host.usage || {})['a' + a.id] || null
+    },
+    atomParam: function () {
+      var col = this.host.atomDlg && this.host.atomDlg.paramCol
+      if (!col) return null
+      return (this.host.params || []).filter(function (p) { return p.paramCol === col })[0] || null
+    },
+    /** 枚举比较才改成下拉，写入的仍是编码值。集合和正则继续用手填。 */
+    atomEnums: function () {
+      var p = this.atomParam
+      var dlg = this.host.atomDlg
+      if (!p || !dlg || !p.enumDict) return []
+      if (dlg.cmpOp === 'IN' || dlg.cmpOp === 'NOT IN' || dlg.cmpOp === '=~') return []
+      var out = []
+      String(p.enumDict).split(';').forEach(function (part) {
+        var i = part.indexOf(':')
+        if (i > 0) out.push({ value: part.slice(0, i).trim(), label: part.slice(i + 1).trim() })
+      })
+      return out
+    },
+    atomScopes: function () {
+      var set = { ALL: 1 }
+      ;(this.host.cxOptions || []).forEach(function (c) { if (c) set[c] = 1 })
+      var cur = this.host.atomDlg && this.host.atomDlg.scopeCx
+      if (cur) set[cur] = 1
+      return Object.keys(set).sort(function (a, b) {
+        if (a === 'ALL') return -1
+        if (b === 'ALL') return 1
+        return a < b ? -1 : a > b ? 1 : 0
+      })
+    },
+    cmpPlaceholder: function () {
+      var op = this.host.atomDlg && this.host.atomDlg.cmpOp
+      if (op === '=~') return '如 ^[A-Za-z]'
+      if (op === 'IN' || op === 'NOT IN') return '逗号分隔的编码值'
+      return (this.atomParam && this.atomParam.unit) || '目标值，缺失写 -'
+    },
+    cmpHint: function () {
+      var p = this.atomParam
+      var op = this.host.atomDlg && this.host.atomDlg.cmpOp
+      var unit = p && p.unit ? ('单位：' + p.unit) : '文本 / 编码值'
+      if (op === 'IN' || op === 'NOT IN' || op === '=~') unit += ' · 支持集合或正则'
+      return unit
+    },
+    quickCodes: function () { return ['1873', '1874', '1031', '1742'] }
   },
   methods: {
     timing: timingLabel,
+    winFnLabel: function (f) {
+      return { allNotExists: '窗口内均未出现', anyExists: '窗口内任一出现', allExists: '窗口内全部出现', anyNotExists: '窗口内不全出现' }[f] || f
+    },
+    /** 点一下把故障代码补进逗号串，已有的不重复。 */
+    usageFaults: function (usage) {
+      return ((usage && usage.faults) || []).map(function (f) { return f.cx + '/' + f.gzdm }).join('、')
+    },
+    pickCode: function (code) {
+      var dlg = this.host.atomDlg
+      if (!dlg) return
+      var cur = String(dlg.relGzdm || '').split(/[,，]/).map(function (s) { return s.trim() }).filter(Boolean)
+      if (cur.indexOf(code) < 0) cur.push(code)
+      dlg.relGzdm = cur.join(',')
+    },
     scopeList: function () {
       var raw = (this.host.preForm && this.host.preForm.scopeCx) || ''
       return String(raw).split(',').map(function (s) { return s.trim() }).filter(Boolean)
