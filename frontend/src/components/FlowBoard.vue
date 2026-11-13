@@ -1,25 +1,45 @@
 <template>
-  <div class="mask" @keydown.esc="esc">
-    <div class="board">
+  <div class="mask" :class="{ leaving: leaving }">
+    <div class="board" :class="{ leaving: leaving }">
       <header class="bhead">
-        <b>处置流程管理</b>
-        <el-button type="text" @click="$emit('close')">× 关闭</el-button>
+        <div>
+          <b>处置流程管理</b>
+          <div class="hint">粒度：车型＋来源＋故障代码 · 五类步骤（查看 / 判断 / 操作 / 联络上报 / 结束）· 司机 / 专家 / 系统协同</div>
+        </div>
+        <button type="button" class="close" @click="requestClose">×</button>
       </header>
       <div class="bcols" :class="{ wide: right === 'view' || right === 'trial' }">
         <aside class="scroll pane">
-          <el-radio-group v-model="tab" size="mini">
-            <el-radio-button label="fault">故障</el-radio-button>
-            <el-radio-button label="tpl">通用模板</el-radio-button>
-          </el-radio-group>
-          <el-input v-model="q" size="mini" placeholder="搜索" clearable style="margin:6px 0" />
+          <div class="seg">
+            <button type="button" :class="{ active: tab === 'fault' }" @click="tab = 'fault'">故障 {{ actionable.length }}</button>
+            <button type="button" :class="{ active: tab === 'tpl' }" @click="tab = 'tpl'">通用模板 {{ templates.length }}</button>
+          </div>
+          <div class="row" style="margin:6px 0">
+            <select v-model="flowCx" class="mini">
+              <option value="">全部车型</option>
+              <option v-for="c in flowCxOptions" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <select v-model="flowSt" class="mini">
+              <option value="">全部状态</option>
+              <option value="PUBLISHED">已发布</option>
+              <option value="DRAFT">草稿</option>
+              <option value="NONE">未配置</option>
+            </select>
+          </div>
+          <input v-model="q" placeholder="⌕ 搜索故障代码 / 名称 / 模板" style="width:100%;margin:6px 0" />
           <template v-if="tab==='fault'">
-            <div v-for="f in faultRows" :key="f.id" class="fcard" :class="{active: sel && sel.type==='fault' && sel.faultId===f.id}" @click="selectFault(f)">
-              <div><b>{{ f.gzdm }}</b> <span class="tag" :class="'cz-'+f.czdj">{{ f.czdj==='CHECK'?'排查':'关注' }}</span> {{ f.cx }}</div>
-              <div>{{ f.gzmc }}</div>
-              <div class="muted" v-if="f.flowId">{{ f.flowStatus==='PUBLISHED' ? ('已发布 v'+f.pubVerNo) : '草稿' }} · {{ f.stepCount }} 步
-                <span v-if="f.isTemplate"> · 模板</span>
+            <div v-for="f in faultRows" :key="f.id" class="flitem" :class="{sel: sel && sel.type==='fault' && sel.faultId===f.id}" @click="selectFault(f)">
+              <div class="between">
+                <b class="flcode">{{ f.gzdm }}</b>
+                <span class="row" style="gap:4px">
+                  <span class="cztag" :class="'cz-'+(f.czdj||'').toLowerCase()">{{ f.czdj==='CHECK'?'排查':(f.czdj==='WATCH'?'关注':'无需干预') }}</span>
+                  <span class="badge">{{ f.cx }}</span>
+                  <span class="badge blue">{{ f.ly }}</span>
+                </span>
               </div>
-              <div class="muted" v-else>○ 未配置处置流程</div>
+              <div class="flname">{{ f.gzmc }}</div>
+              <div v-if="f.flowId"><span class="stpill" :class="f.flowStatus==='PUBLISHED'?'pub':'draft'">{{ f.flowStatus==='PUBLISHED' ? ('已发布 v'+f.pubVerNo) : '草稿' }} · {{ f.stepCount }} 步</span></div>
+              <div v-else class="unset">○ 未配置处置流程</div>
             </div>
           </template>
           <template v-else>
@@ -33,26 +53,36 @@
         <section class="scroll pane" v-if="flow">
           <div v-if="flow.isSample===1" class="banner">⚠ {{ flow.sampleNote || '示例内容，非正式规程，需按实际司机手册校核' }}</div>
           <div v-if="flow.bindings.length>1 || flow.isTemplate===1" class="banner purple">◆ 该流程由 {{ flow.bindings.length }} 个故障共用，修改将同步影响所有绑定故障</div>
-          <div class="fm">
-            <el-input v-model="flow.flowName" style="max-width:360px" @change="saveHeader" />
-            <span class="tag" :class="flow.flowStatus==='PUBLISHED'?'ok':'muted'">{{ statusText }}</span>
-            <el-button size="mini" @click="reload">校验</el-button>
-            <el-button size="mini" type="primary" :disabled="flow.verStatus==='PUBLISHED'" @click="publish">{{ flow.verStatus==='PUBLISHED' ? ('已发布 v' + flow.pubVerNo) : ('发布为 v' + ((flow.pubVerNo || 0) + 1)) }}</el-button>
-            <el-button size="mini" @click="addStep(null)">＋ 添加步骤</el-button>
-            <el-button size="mini" @click="brick=!brick">▦ 积木池</el-button>
-            <el-button size="mini" @click="asTemplate">存为通用模板</el-button>
-            <el-button size="mini" @click="bindDlg=true">绑定 / 解绑故障</el-button>
-            <el-button size="mini" type="text" @click="removeFlow">删除</el-button>
-          </div>
-          <div class="muted">默认窗口 T0 −
-            <el-input-number v-model="flow.winPreSec" :min="0" :max="3600" size="mini" @change="saveHeader" />
-            ～ T0 +
-            <el-input-number v-model="flow.winPostSec" :min="0" :max="3600" size="mini" @change="saveHeader" />
-            秒 · 运行信息 {{ flow.runInfoCols }}
+          <div class="fmhead">
+            <div class="between">
+              <div class="row" style="gap:6px">
+                <input class="fname" v-model="flow.flowName" aria-label="流程名称" @change="saveHeader" />
+                <span class="tag" :class="flow.flowStatus==='PUBLISHED'?'ok':'muted'">{{ statusText }}</span>
+              </div>
+              <div class="row" style="gap:5px">
+                <button type="button" class="small" @click="reload">校验</button>
+                <button type="button" class="small primary" :disabled="flow.verStatus==='PUBLISHED'" @click="publish">{{ flow.verStatus==='PUBLISHED' ? ('已发布 v' + flow.pubVerNo) : ('发布为 v' + ((flow.pubVerNo || 0) + 1)) }}</button>
+              </div>
+            </div>
+            <div class="row" style="gap:5px;margin-top:6px">
+              <button type="button" class="small" @click="addStep(null)">＋ 添加步骤</button>
+              <button type="button" class="small" @click="brick=!brick">▦ 积木池</button>
+              <button type="button" class="small" @click="asTemplate">存为通用模板</button>
+              <button type="button" class="small" @click="bindDlg=true">绑定 / 解绑故障</button>
+              <button type="button" class="small" @click="showSet=!showSet">流程设置 {{ showSet ? '▴' : '▾' }}</button>
+              <button type="button" class="small danger" @click="removeFlow">删除</button>
+            </div>
+            <div v-if="showSet" class="setbox">
+              默认取数窗口：T0 −
+              <input type="number" min="0" max="3600" v-model.number="flow.winPreSec" @change="saveHeader" />
+              s ～ T0 +
+              <input type="number" min="0" max="3600" v-model.number="flow.winPostSec" @change="saveHeader" />
+              s · 运行信息 {{ flow.runInfoCols }}
+            </div>
           </div>
           <div class="muted">绑定故障：
             <span v-for="b in flow.bindings" :key="b.faultRuleId" class="tag">{{ b.cx }}/{{ b.gzdm }}
-              <el-button type="text" @click="unbind(b)">×</el-button>
+              <button type="button" class="link small" @click="unbind(b)">×</button>
             </span>
           </div>
           <div v-if="!flow.errors.length && !flow.warnings.length" class="okbox">✓ 校验通过：每个分支都有出口、无死循环、参数适用车型匹配、包含结束节点</div>
@@ -63,22 +93,29 @@
               <li v-for="(w,i) in flow.warnings" :key="'w'+i" class="w">{{ w }}</li>
             </ul>
           </details>
-          <div v-for="(s,i) in flow.steps" :key="s.id" class="scard" :class="{on: step && step.id===s.id, over: dragOver===i}" @click="step=s"
+          <div v-for="(s,i) in flow.steps" :key="s.id" class="scard" :class="{open: step && step.id===s.id, dropin: dragOver===i}"
+               :style="{ '--tc': stepColor(s.stepType) }" @click="step=s"
                @dragover.prevent="dragOver=i" @drop.stop.prevent="onDrop(i)">
-            <div class="row">
-              <span class="handle" draggable="true" title="拖拽排序" @dragstart.stop="onDragStart(i, $event)" @dragend="dragFrom=null; dragOver=null">⋮⋮</span>
-              <b>{{ circ(i) }}</b> <span class="tag">{{ typeLabel(s.stepType) }}</span> {{ s.stepTitle }}
+            <span class="sgrip" draggable="true" title="拖拽排序" @dragstart.stop="onDragStart(i, $event)" @dragend="dragFrom=null; dragOver=null">⋮⋮</span>
+            <div class="sbody">
+              <div class="srow1">
+                <span class="sno">{{ circ(i) }}</span>
+                <span class="tbadge" :class="'t-' + s.stepType.toLowerCase()">{{ typeLabel(s.stepType) }}</span>
+                <b class="stt">{{ s.stepTitle }}</b>
+              </div>
+              <div class="srow2">
+                <span v-for="r in s.roleCodes" :key="r" class="rchip" :class="roleClass(r)">{{ roleLabel(r) }}</span>
+                <span class="cardcnt">卡 {{ (s.cards||[]).length }}</span>
+                <span class="exits">
+                  <span v-for="b in s.branches" :key="b.id" :class="{ missing: !b.nextStepId && s.stepType!=='END' }">{{ b.branchLabel }} → {{ b.nextStepCode || '未配置' }}</span>
+                </span>
+                <span v-if="s.stepType==='END'" class="concl">■ {{ conclLabel(s.conclusion) }}</span>
+              </div>
             </div>
-            <div class="muted">{{ (s.roleCodes||[]).join(' / ') }} · 卡 {{ (s.cards||[]).length }}
-              · <span v-for="b in s.branches" :key="b.id">{{ b.branchLabel }} → {{ b.nextStepCode || '未配置' }} </span>
-              <span v-if="s.stepType==='END'">■ {{ conclLabel(s.conclusion) }}</span>
-            </div>
-            <div>
-              <el-button type="text" @click.stop="moveStep(i, -1)">上移</el-button>
-              <el-button type="text" @click.stop="moveStep(i, 1)">下移</el-button>
-              <el-button type="text" @click.stop="addStep(s.id)">＋插入</el-button>
-              <el-button type="text" @click.stop="copyStep(s)">复制</el-button>
-              <el-button type="text" @click.stop="delStep(s)">删除</el-button>
+            <div class="sacts" @click.stop>
+              <button type="button" class="link small" title="在其后插入" @click="addStep(s.id)">＋插入</button>
+              <button type="button" class="link small" title="复制" @click="copyStep(s)">复制</button>
+              <button type="button" class="link small danger" title="删除" @click="delStep(s)">删除</button>
             </div>
           </div>
           <div v-if="!flow.steps.length && sel && sel.faultId && !sel.flowId" class="empty">
@@ -95,11 +132,33 @@
           </div>
           <div v-else class="muted" style="padding:20px">从左侧选择故障或模板</div>
         </section>
-        <aside class="scroll pane">
+        <aside class="pane chartpane">
           <el-tabs v-model="right">
             <el-tab-pane label="流程图" name="svg">
-              <div class="row"><span class="muted">{{ legend }}</span><el-button size="mini" @click="flowBig=true">展开大图</el-button></div>
-              <div class="flowbox" v-html="svg" @click="onSvg"></div>
+              <div class="svgtab">
+                <div class="between">
+                  <div class="glegend">
+                    <span><i class="lgs lg-view"></i>查看</span>
+                    <span><i class="lgs lg-judge"></i>判断</span>
+                    <span><i class="lgs lg-op"></i>操作</span>
+                    <span><i class="lgs lg-contact"></i>联络上报</span>
+                    <span><i class="lgs lg-end"></i>结束</span>
+                    <span><i class="lgs lg-ref"></i>转至 · 已展开</span>
+                  </div>
+                  <span>
+                    <button type="button" class="small" @click="fitFlow">适应窗口</button>
+                    <button type="button" class="small" @click="flowBig=true">展开大图</button>
+                  </span>
+                </div>
+                <div class="flowstage" ref="flowbox"
+                     @wheel.prevent="onFlowWheel"
+                     @pointerdown="onFlowDown"
+                     @pointermove="onFlowMove"
+                     @pointerup="onFlowUp"
+                     @pointercancel="onFlowUp">
+                  <div class="flowcanvas" :style="flowTransform" v-html="svg" @click="onSvg"></div>
+                </div>
+              </div>
             </el-tab-pane>
             <el-tab-pane label="司机 / 专家视角" name="view">
               <flow-runner v-if="flow" :flow="flow" :trial="false" :active="right==='view'" />
@@ -312,7 +371,7 @@
 
 <script>
 import http from '../api/http'
-import { flowSvg, FLOW_LEGEND } from '../utils/flowSvg'
+import { flowSvg, FLOW_LEGEND, contentBox, fitTransform } from '../utils/flowSvg'
 import BigCanvas from './BigCanvas.vue'
 import FlowRunner from './FlowRunner.vue'
 
@@ -330,21 +389,33 @@ export default {
   components: { BigCanvas: BigCanvas, FlowRunner: FlowRunner },
   data: function () {
     return {
-      faults: [], flows: [], tab: 'fault', q: '', sel: null, flow: null, step: null,
+      faults: [], flows: [], tab: 'fault', q: '', flowCx: '', flowSt: '', sel: null, flow: null, step: null,
       right: 'svg', brick: false, brickTab: 'param', brickQ: '', params: [], atoms: [], groups: [],
       stepTab: 'basic',
       typeDlg: false, afterId: null, bindDlg: false, bindIds: [], applyOpen: false,
       events: [], eventId: null, event: null,
-      types: TYPES, limitOps: ['<', '<=', '>', '>='], flowBig: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND
+      types: TYPES, limitOps: ['<', '<=', '>', '>='], flowBig: false, showSet: false, leaving: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND,
+      flowScale: 1, flowTx: 0, flowTy: 0, flowFit: true, flowDrag: null
     }
   },
   computed: {
     actionable: function () {
       return this.faults.filter(function (f) { return f.czdj === 'CHECK' || f.czdj === 'WATCH' })
     },
+    flowCxOptions: function () {
+      var s = {}
+      this.actionable.forEach(function (f) { s[f.cx] = 1 })
+      return Object.keys(s)
+    },
     faultRows: function () {
       var q = (this.q || '').toLowerCase()
+      var cx = this.flowCx
+      var st = this.flowSt
       return this.actionable.filter(function (f) {
+        if (cx && f.cx !== cx) return false
+        if (st === 'NONE' && f.flowId) return false
+        if (st === 'PUBLISHED' && f.flowStatus !== 'PUBLISHED') return false
+        if (st === 'DRAFT' && !(f.flowId && f.flowStatus !== 'PUBLISHED')) return false
         return !q || (f.gzdm + f.gzmc + (f.flowName || '')).toLowerCase().indexOf(q) >= 0
       })
     },
@@ -359,6 +430,9 @@ export default {
     },
     svg: function () {
       return this.flow ? flowSvg(this.flow.steps, { hl: this.step && this.step.id }) : ''
+    },
+    flowTransform: function () {
+      return { transform: 'translate(' + this.flowTx + 'px,' + this.flowTy + 'px) scale(' + this.flowScale + ')' }
     },
     stepOpen: {
       get: function () { return !!this.step },
@@ -396,8 +470,26 @@ export default {
       return t ? t.h : ''
     }
   },
+  watch: {
+    svg: function () { if (this.flowFit && this.right === 'svg') this.$nextTick(this.fitFlow) },
+    right: function (v) { if (v === 'svg') this.$nextTick(this.fitFlow) }
+  },
   mounted: function () {
     this.refresh(true)
+    var self = this
+    this._fitResize = function () { if (self.flowFit && self.right === 'svg') self.fitFlow() }
+    this._onEsc = function (e) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      self.requestClose()
+    }
+    window.addEventListener('resize', this._fitResize)
+    window.addEventListener('keydown', this._onEsc)
+  },
+  beforeDestroy: function () {
+    window.removeEventListener('resize', this._fitResize)
+    window.removeEventListener('keydown', this._onEsc)
+    clearTimeout(this._leaveTimer)
   },
   methods: {
     refresh: function (pick) {
@@ -648,6 +740,52 @@ export default {
       if (!this.eventId) { this.event = null; return }
       http.get('/api/trials/' + this.eventId).then(function (e) { self.event = e }).catch(this.fail)
     },
+    /** 侧栏流程图：按内容包围盒适应容器，留边，不放大超过 1。 */
+    fitFlow: function () {
+      var st = this.$refs.flowbox
+      if (!st || this.right !== 'svg') return
+      var svg = st.querySelector('svg')
+      if (!svg) return
+      if (st.clientWidth < 8 || st.clientHeight < 8) {
+        var self = this
+        if (!this._fitRetry) {
+          this._fitRetry = true
+          requestAnimationFrame(function () { self._fitRetry = false; if (self.flowFit) self.fitFlow() })
+        }
+        return
+      }
+      var t = fitTransform(contentBox(svg), { width: st.clientWidth, height: st.clientHeight }, 12)
+      this.flowScale = t.scale
+      this.flowTx = t.tx
+      this.flowTy = t.ty
+      this.flowFit = true
+    },
+    onFlowWheel: function (e) {
+      var st = this.$refs.flowbox
+      if (!st) return
+      var r = st.getBoundingClientRect()
+      var cx = e.clientX - r.left
+      var cy = e.clientY - r.top
+      var ns = Math.max(0.15, Math.min(4, this.flowScale * (e.deltaY < 0 ? 1.12 : 1 / 1.12)))
+      var k = ns / (this.flowScale || 1)
+      this.flowTx = cx - (cx - this.flowTx) * k
+      this.flowTy = cy - (cy - this.flowTy) * k
+      this.flowScale = ns
+      this.flowFit = false
+    },
+    onFlowDown: function (e) {
+      if (e.button !== 0) return
+      if (e.target.closest && e.target.closest('[data-id]')) return
+      this.flowDrag = { x: e.clientX, y: e.clientY, tx: this.flowTx, ty: this.flowTy }
+      if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId)
+    },
+    onFlowMove: function (e) {
+      if (!this.flowDrag) return
+      this.flowTx = this.flowDrag.tx + e.clientX - this.flowDrag.x
+      this.flowTy = this.flowDrag.ty + e.clientY - this.flowDrag.y
+      this.flowFit = false
+    },
+    onFlowUp: function () { this.flowDrag = null },
     onSvg: function (e) {
       var g = e.target.closest && e.target.closest('[data-id]')
       if (!g) return
@@ -679,12 +817,23 @@ export default {
         self.flow = d
       }).catch(this.fail)
     },
-    esc: function () {
-      if (this.brick) this.brick = false
-      else if (this.step) this.step = null
-      else this.$emit('close')
+    /**
+     * Esc 或点关闭：先向右滑出，动画结束后再交给外层销毁。
+     * 监听挂在 window 上，组件销毁时一定卸掉。
+     */
+    requestClose: function () {
+      if (this.leaving) return
+      this.leaving = true
+      var self = this
+      this._leaveTimer = setTimeout(function () { self.$emit('close') }, 200)
     },
+    esc: function () { this.requestClose() },
     circ: function (i) { return CIRC[i] || (i + 1) },
+    stepColor: function (t) {
+      return { VIEW: '#0369a1', JUDGE: '#b45309', OP: '#15803d', CONTACT: '#be185d', END: '#334155' }[t] || '#334155'
+    },
+    roleLabel: function (r) { return { DRIVER: '司机', EXPERT: '专家', SYSTEM: '系统' }[r] || r },
+    roleClass: function (r) { return { DRIVER: 'r-driver', EXPERT: 'r-expert', SYSTEM: 'r-system' }[r] || '' },
     typeLabel: function (t) {
       var f = TYPES.filter(function (x) { return x.v === t })[0]
       return f ? f.l : t
@@ -796,13 +945,28 @@ export default {
 </script>
 
 <style scoped>
-.mask { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:20; display:flex; }
-.board { background:#f8fafc; margin:16px; flex:1; border-radius:12px; display:flex; flex-direction:column; min-width:0; }
-.bhead { display:flex; justify-content:space-between; padding:10px 14px; background:#fff; border-bottom:1px solid var(--line); }
-.bcols { flex:1; display:grid; grid-template-columns: 260px 1fr 340px; min-height:0; }
-.bcols.wide { grid-template-columns: 220px minmax(240px,1fr) minmax(520px,640px); }
+.mask { position:fixed; inset:0; background:#0f172a55; z-index:20; display:flex; justify-content:flex-end; }
+.board { background:#f8fafc; margin:0; width:98vw; height:100%; border-radius:0; display:flex; flex-direction:column; min-width:0; box-shadow:-15px 0 50px #0f172a33; animation:flowIn .22s ease-out; }
+.board.leaving { animation:flowOut .2s ease-in forwards; }
+@keyframes flowIn { from { transform:translateX(100%) } to { transform:translateX(0) } }
+@keyframes flowOut { from { transform:translateX(0) } to { transform:translateX(100%) } }
+.bhead { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 16px; background:#fff; border-bottom:1px solid var(--line); }
+/* 原型 .fbody：左栏固定 290px，右栏 47%，中间吃剩余。1280 宽下中间大约 375px。 */
+.bcols, .bcols.wide { flex:1; display:grid; grid-template-columns:290px minmax(0,1fr) 47%; min-height:0; }
+.bcols > .pane, .bcols > .chartpane { min-width:0; }
+.fname { font-size:15px; font-weight:700; border:1px solid transparent; padding:3px 6px; min-width:0; width:100%; max-width:240px; background:#fff; }
+.fname:hover, .fname:focus { border-color:var(--line); }
+.setbox { margin-top:8px; font-size:12px; color:#64748b; background:#f8fafc; border-radius:6px; padding:8px; }
+.setbox input { width:64px; padding:4px 6px; }
+.fmhead { margin-bottom:8px; }
+.sacts { opacity:0; transition:opacity .15s; }
+.scard:hover .sacts, .scard.open .sacts { opacity:1; }
 .pane { padding:10px; min-height:0; background:#fff; border-right:1px solid var(--line); }
-.fcard, .pcard, .scard { border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0; }
+.fcard, .pcard { border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0; }
+.scard { margin:0 0 7px; max-width:100%; }
+.sbody, .srow1, .srow2, .exits { min-width:0; max-width:100%; }
+.stt { min-width:0; }
+.exits span { overflow-wrap:anywhere; }
 .fcard, .scard { cursor:pointer; }
 .fcard.active, .scard.on { border-color:#2563eb; background:#eff6ff; }
 .banner { background:#fffbeb; color:#b45309; padding:6px 8px; border-radius:6px; margin-bottom:6px; }
@@ -815,7 +979,15 @@ export default {
 .valbox .w { color:#a16207; }
 .handle { cursor:grab; color:#94a3b8; padding:0 6px; letter-spacing:-1px; user-select:none; }
 .scard.over { box-shadow:inset 0 3px 0 #2563eb; }
-.flowbox { overflow:auto; border:1px solid var(--line); border-radius:8px; background:#fff; }
+.chartpane { display:flex; flex-direction:column; overflow:hidden; }
+.chartpane >>> .el-tabs { flex:1; min-height:0; display:flex; flex-direction:column; }
+.chartpane >>> .el-tabs__content { flex:1; min-height:0; overflow:auto; }
+.chartpane >>> .el-tab-pane { height:100%; }
+.svgtab { height:100%; display:flex; flex-direction:column; min-height:0; }
+.flowstage { flex:1; min-height:180px; overflow:hidden; position:relative; border:1px solid var(--line); border-radius:8px; background:#fff; touch-action:none; cursor:grab; }
+.flowcanvas { position:absolute; left:0; top:0; transform-origin:0 0; }
+.glegend { font-size: 11px; color: #64748b; }
+select.mini { font-size: 12px; padding: 4px 6px; max-width: 120px; }
 .okbox { background:#f0fdf4; color:#15803d; padding:8px; border-radius:8px; }
 .fm { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .simbanner { background:#fff7ed; border:1px solid #fdba74; color:#9a3412; border-radius:5px; padding:5px 9px; font-size:12px; font-weight:600; margin-bottom:7px; display:flex; justify-content:space-between; align-items:center; }

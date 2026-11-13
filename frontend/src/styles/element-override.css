@@ -1,0 +1,80 @@
+/* Element UI 只留在弹窗和下拉里。主色、圆角、字号跟原型对齐，压掉默认的 #409EFF。 */
+.el-button {
+  border-radius: 6px;
+  font-weight: 500;
+}
+.el-button--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+.el-button--text {
+  color: #2563eb;
+}
+.el-button--text.danger,
+.el-button--text.is-danger {
+  color: #dc2626;
+}
+.el-input__inner,
+.el-textarea__inner {
+  border-radius: 6px;
+  border-color: #cfd8e4;
+  color: #1e293b;
+}
+.el-input__inner:focus,
+.el-textarea__inner:focus {
+  border-color: #2563eb;
+}
+.el-tabs__item.is-active,
+.el-tabs__item:hover {
+  color: #2563eb;
+}
+.el-tabs__active-bar {
+  background-color: #2563eb;
+}
+.el-radio-button__orig-radio:checked + .el-radio-button__inner {
+  background: #2563eb;
+  border-color: #2563eb;
+  box-shadow: -1px 0 0 0 #2563eb;
+}
+.el-dialog {
+  border-radius: 10px;
+  overflow: hidden;
+}
+.el-dialog__header {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 16px 20px 12px;
+}
+.el-dialog__title {
+  font-size: 15px;
+  color: #1e293b;
+}
+.el-dialog__body {
+  color: #1e293b;
+}
+.el-dialog__footer {
+  border-top: 1px solid #e2e8f0;
+}
+.el-drawer__header {
+  margin-bottom: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #1e293b;
+  font-weight: 650;
+}
+.el-select-dropdown__item.selected {
+  color: #2563eb;
+}
+.el-switch.is-checked .el-switch__core {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+/* 原型弹窗遮罩在 3000，下拉层写在 body 上，要盖过遮罩。 */
+.el-select-dropdown.el-popper,
+.el-picker-panel {
+  z-index: 4100 !important;
+}
