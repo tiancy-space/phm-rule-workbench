@@ -117,21 +117,33 @@
           </div>
           <div v-else class="muted" style="padding:20px">从左侧选择故障或模板</div>
         </section>
-        <aside class="scroll pane">
+        <aside class="pane chartpane">
           <el-tabs v-model="right">
             <el-tab-pane label="流程图" name="svg">
-              <div class="between">
-                <div class="glegend">
-                  <span><i class="lgs lg-view"></i>查看</span>
-                  <span><i class="lgs lg-judge"></i>判断</span>
-                  <span><i class="lgs lg-op"></i>操作</span>
-                  <span><i class="lgs lg-contact"></i>联络上报</span>
-                  <span><i class="lgs lg-end"></i>结束</span>
-                  <span><i class="lgs lg-ref"></i>转至 · 已展开</span>
+              <div class="svgtab">
+                <div class="between">
+                  <div class="glegend">
+                    <span><i class="lgs lg-view"></i>查看</span>
+                    <span><i class="lgs lg-judge"></i>判断</span>
+                    <span><i class="lgs lg-op"></i>操作</span>
+                    <span><i class="lgs lg-contact"></i>联络上报</span>
+                    <span><i class="lgs lg-end"></i>结束</span>
+                    <span><i class="lgs lg-ref"></i>转至 · 已展开</span>
+                  </div>
+                  <span>
+                    <el-button size="mini" @click="fitFlow">适应窗口</el-button>
+                    <el-button size="mini" @click="flowBig=true">展开大图</el-button>
+                  </span>
                 </div>
-                <el-button size="mini" @click="flowBig=true">展开大图</el-button>
+                <div class="flowstage" ref="flowbox"
+                     @wheel.prevent="onFlowWheel"
+                     @pointerdown="onFlowDown"
+                     @pointermove="onFlowMove"
+                     @pointerup="onFlowUp"
+                     @pointercancel="onFlowUp">
+                  <div class="flowcanvas" :style="flowTransform" v-html="svg" @click="onSvg"></div>
+                </div>
               </div>
-              <div class="flowbox fit" v-html="svg" @click="onSvg"></div>
             </el-tab-pane>
             <el-tab-pane label="司机 / 专家视角" name="view">
               <flow-runner v-if="flow" :flow="flow" :trial="false" :active="right==='view'" />
@@ -344,7 +356,7 @@
 
 <script>
 import http from '../api/http'
-import { flowSvg, FLOW_LEGEND } from '../utils/flowSvg'
+import { flowSvg, FLOW_LEGEND, contentBox, fitTransform } from '../utils/flowSvg'
 import BigCanvas from './BigCanvas.vue'
 import FlowRunner from './FlowRunner.vue'
 
@@ -367,7 +379,8 @@ export default {
       stepTab: 'basic',
       typeDlg: false, afterId: null, bindDlg: false, bindIds: [], applyOpen: false,
       events: [], eventId: null, event: null,
-      types: TYPES, limitOps: ['<', '<=', '>', '>='], flowBig: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND
+      types: TYPES, limitOps: ['<', '<=', '>', '>='], flowBig: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND,
+      flowScale: 1, flowTx: 0, flowTy: 0, flowFit: true, flowDrag: null
     }
   },
   computed: {
@@ -402,6 +415,9 @@ export default {
     },
     svg: function () {
       return this.flow ? flowSvg(this.flow.steps, { hl: this.step && this.step.id }) : ''
+    },
+    flowTransform: function () {
+      return { transform: 'translate(' + this.flowTx + 'px,' + this.flowTy + 'px) scale(' + this.flowScale + ')' }
     },
     stepOpen: {
       get: function () { return !!this.step },
@@ -439,8 +455,18 @@ export default {
       return t ? t.h : ''
     }
   },
+  watch: {
+    svg: function () { if (this.flowFit && this.right === 'svg') this.$nextTick(this.fitFlow) },
+    right: function (v) { if (v === 'svg') this.$nextTick(this.fitFlow) }
+  },
   mounted: function () {
     this.refresh(true)
+    var self = this
+    this._fitResize = function () { if (self.flowFit && self.right === 'svg') self.fitFlow() }
+    window.addEventListener('resize', this._fitResize)
+  },
+  beforeDestroy: function () {
+    window.removeEventListener('resize', this._fitResize)
   },
   methods: {
     refresh: function (pick) {
@@ -691,6 +717,52 @@ export default {
       if (!this.eventId) { this.event = null; return }
       http.get('/api/trials/' + this.eventId).then(function (e) { self.event = e }).catch(this.fail)
     },
+    /** 侧栏流程图：按内容包围盒适应容器，留边，不放大超过 1。 */
+    fitFlow: function () {
+      var st = this.$refs.flowbox
+      if (!st || this.right !== 'svg') return
+      var svg = st.querySelector('svg')
+      if (!svg) return
+      if (st.clientWidth < 8 || st.clientHeight < 8) {
+        var self = this
+        if (!this._fitRetry) {
+          this._fitRetry = true
+          requestAnimationFrame(function () { self._fitRetry = false; if (self.flowFit) self.fitFlow() })
+        }
+        return
+      }
+      var t = fitTransform(contentBox(svg), { width: st.clientWidth, height: st.clientHeight }, 12)
+      this.flowScale = t.scale
+      this.flowTx = t.tx
+      this.flowTy = t.ty
+      this.flowFit = true
+    },
+    onFlowWheel: function (e) {
+      var st = this.$refs.flowbox
+      if (!st) return
+      var r = st.getBoundingClientRect()
+      var cx = e.clientX - r.left
+      var cy = e.clientY - r.top
+      var ns = Math.max(0.15, Math.min(4, this.flowScale * (e.deltaY < 0 ? 1.12 : 1 / 1.12)))
+      var k = ns / (this.flowScale || 1)
+      this.flowTx = cx - (cx - this.flowTx) * k
+      this.flowTy = cy - (cy - this.flowTy) * k
+      this.flowScale = ns
+      this.flowFit = false
+    },
+    onFlowDown: function (e) {
+      if (e.button !== 0) return
+      if (e.target.closest && e.target.closest('[data-id]')) return
+      this.flowDrag = { x: e.clientX, y: e.clientY, tx: this.flowTx, ty: this.flowTy }
+      if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId)
+    },
+    onFlowMove: function (e) {
+      if (!this.flowDrag) return
+      this.flowTx = this.flowDrag.tx + e.clientX - this.flowDrag.x
+      this.flowTy = this.flowDrag.ty + e.clientY - this.flowDrag.y
+      this.flowFit = false
+    },
+    onFlowUp: function () { this.flowDrag = null },
     onSvg: function (e) {
       var g = e.target.closest && e.target.closest('[data-id]')
       if (!g) return
@@ -863,8 +935,13 @@ export default {
 .valbox .w { color:#a16207; }
 .handle { cursor:grab; color:#94a3b8; padding:0 6px; letter-spacing:-1px; user-select:none; }
 .scard.over { box-shadow:inset 0 3px 0 #2563eb; }
-.flowbox { overflow:auto; border:1px solid var(--line); border-radius:8px; background:#fff; }
-.flowbox.fit >>> svg, .flowbox.fit svg { width: 100%; height: auto; }
+.chartpane { display:flex; flex-direction:column; overflow:hidden; }
+.chartpane >>> .el-tabs { flex:1; min-height:0; display:flex; flex-direction:column; }
+.chartpane >>> .el-tabs__content { flex:1; min-height:0; overflow:auto; }
+.chartpane >>> .el-tab-pane { height:100%; }
+.svgtab { height:100%; display:flex; flex-direction:column; min-height:0; }
+.flowstage { flex:1; min-height:180px; overflow:hidden; position:relative; border:1px solid var(--line); border-radius:8px; background:#fff; touch-action:none; cursor:grab; }
+.flowcanvas { position:absolute; left:0; top:0; transform-origin:0 0; }
 .glegend { font-size: 11px; color: #64748b; }
 select.mini { font-size: 12px; padding: 4px 6px; max-width: 120px; }
 .okbox { background:#f0fdf4; color:#15803d; padding:8px; border-radius:8px; }

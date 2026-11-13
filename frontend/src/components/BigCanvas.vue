@@ -31,9 +31,11 @@
 </template>
 
 <script>
+import { contentBox, fitTransform } from '../utils/flowSvg'
 /**
  * 梯形图和流程图共用的大图。滚轮以光标为中心缩放，按住拖动平移，
- * 快捷键 + / - / F / 0 / Esc 与原型一致。导出把当前 SVG 写成文件，PNG 用 2 倍画布。
+ * 快捷键 + / - / F / 0 / Esc 与原型一致。打开时按内容包围盒适应窗口，不放大超过 100%。
+ * 导出把当前 SVG 写成文件，PNG 用 2 倍画布。
  */
 export default {
   name: 'BigCanvas',
@@ -48,7 +50,7 @@ export default {
     caption: { type: String, default: '' }
   },
   data: function () {
-    return { scale: 1, tx: 0, ty: 0, fitMode: true, drag: null, W: 1, H: 1 }
+    return { scale: 1, tx: 0, ty: 0, fitMode: true, drag: null, W: 1, H: 1, box: null }
   },
   computed: {
     pct: function () { return Math.round(this.scale * 100) },
@@ -67,19 +69,29 @@ export default {
       if (!svg) return
       this.W = Number(svg.getAttribute('width')) || 400
       this.H = Number(svg.getAttribute('height')) || 300
+      this.box = contentBox(svg)
     },
     refitIfNeeded: function () {
       this.readSize()
       if (this.fitMode) this.fit()
     },
+    /** 按舞台宽高适应。容器还没排好版时下一帧再量一次。 */
     fit: function () {
       this.readSize()
       var st = this.$refs.stage
-      if (!st) return
-      var pad = 32
-      this.scale = Math.max(0.15, Math.min((st.clientWidth - pad * 2) / this.W, (st.clientHeight - pad * 2) / this.H, 2.2))
-      this.tx = (st.clientWidth - this.W * this.scale) / 2
-      this.ty = (st.clientHeight - this.H * this.scale) / 2
+      if (!st || !this.box) return
+      if (st.clientWidth < 8 || st.clientHeight < 8) {
+        var self = this
+        if (!this._fitRetry) {
+          this._fitRetry = true
+          requestAnimationFrame(function () { self._fitRetry = false; if (self.fitMode) self.fit() })
+        }
+        return
+      }
+      var t = fitTransform(this.box, { width: st.clientWidth, height: st.clientHeight }, 24)
+      this.scale = t.scale
+      this.tx = t.tx
+      this.ty = t.ty
       this.fitMode = true
     },
     actual: function () {
@@ -179,7 +191,12 @@ export default {
     if (this.visible) this.$nextTick(this.fit)
     var self = this
     this._focus = function () { if (self.visible && self.$refs.mask) self.$refs.mask.focus() }
+    this._onResize = function () { if (self.visible && self.fitMode) self.fit() }
+    window.addEventListener('resize', this._onResize)
     this.$nextTick(this._focus)
+  },
+  beforeDestroy: function () {
+    window.removeEventListener('resize', this._onResize)
   },
   updated: function () { if (this.visible) this._focus() }
 }
