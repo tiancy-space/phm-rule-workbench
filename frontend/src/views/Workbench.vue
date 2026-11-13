@@ -32,7 +32,7 @@
             <expr-composer :refs="draft.refs" :expr="draft.ruleExpr || ''" :preview="preview"
               @insert="insert" @input="draft.ruleExpr = $event" @all-and="allAnd" @all-or="allOr" />
             <rule-tabs :viz="viz" :tab="tab" :display="preview && preview.display" :gzdm="draft.gzdm"
-              :named-open="namedOpen" :ladder-html="ladderHtml" :preview="preview" :inherited="liveInherited"
+              :named-open="namedOpen" :ladder-html="ladderHtml" :preview="preview" :inherited="liveInherited" :params="params"
               :check-text="checkText" :check-result="checkResult"
               @viz="viz = $event" @tab="tab = $event" @named="setNamed" @toggle="toggleNamed" @big="bigOpen = true"
               @check-input="checkText = $event; runCheck()">

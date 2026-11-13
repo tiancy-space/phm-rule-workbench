@@ -1,12 +1,12 @@
 <template>
   <div>
-    <div class="vizhead between">
+    <div class="vizhead">
       <span class="hint">可视化逻辑结构</span>
-      <div class="row">
+      <div class="viztools">
         <button v-if="viz === 'ladder'" type="button" class="small" @click="$emit('big')">展开大图</button>
         <button type="button" class="link small" @click="$emit('named', true)">展开命名组</button>
         <button type="button" class="link small" @click="$emit('named', false)">折叠命名组</button>
-        <div class="seg">
+        <div class="seg vizseg">
           <button type="button" :class="{ active: viz === 'list' }" @click="$emit('viz', 'list')">分组清单</button>
           <button type="button" :class="{ active: viz === 'ladder' }" @click="$emit('viz', 'ladder')">梯形图</button>
         </div>
@@ -14,10 +14,15 @@
     </div>
     <div v-if="viz === 'list'" class="checklist" style="margin-top:8px">
       <div v-if="display" class="ckhead">{{ head }}</div>
-      <div v-for="(item, i) in tops" :key="i" class="ckitem">
-        <span class="cknum">{{ i + 1 }}</span>
-        <group-tree :node="item" :open="namedOpen" @toggle="$emit('toggle', $event)" />
-      </div>
+      <template v-for="(item, i) in tops">
+        <div v-if="i && display && display.type === 'or'" class="pillrow top" :key="'or' + i"><span class="pill or">或</span></div>
+        <div class="ckitem" :key="'ck' + i">
+          <span class="cknum">{{ circ(i) }}</span>
+          <div class="ckbody">
+            <group-tree :node="item" :open="namedOpen" @toggle="$emit('toggle', $event)" />
+          </div>
+        </div>
+      </template>
       <div v-if="!display" class="empty">写好组合式后这里显示中文结构</div>
     </div>
     <div v-else class="card" style="margin-top:8px;overflow:auto" v-html="ladderHtml" @click="onLadder"></div>
@@ -27,11 +32,7 @@
       <button type="button" :class="{ active: tab === 'sim' }" @click="$emit('tab', 'sim')">模拟测点试算验证</button>
     </div>
     <div v-show="tab === 'cn'">
-      <div class="hint">前置过滤（均须通过，任一不通过即拦截）</div>
-      <ol>
-        <li v-for="(p, i) in inherited" :key="p.id">{{ i + 1 }}. {{ p.filterName }}：{{ short(p.filterExpr) }}</li>
-      </ol>
-      <pre class="preview">{{ preview && preview.ruleDesc }}</pre>
+      <pre class="preview explain">{{ cnBlock }}</pre>
     </div>
     <div v-show="tab === 'json'">
       <div class="hint">入库表达式（引擎执行）</div>
@@ -53,7 +54,7 @@
 
 <script>
 import GroupTree from './GroupTree.vue'
-import { shortCodes } from '../../workbench/explain'
+import { cnExplain } from '../../workbench/explain'
 /** 分组清单、梯形图，以及释义 / 表达式 / 试算三个页签。 */
 export default {
   name: 'RuleTabs',
@@ -67,6 +68,7 @@ export default {
     ladderHtml: { type: String, default: '' },
     preview: { type: Object, default: null },
     inherited: { type: Array, default: function () { return [] } },
+    params: { type: Array, default: function () { return [] } },
     checkText: { type: String, default: '' },
     checkResult: { type: Object, default: null }
   },
@@ -82,10 +84,18 @@ export default {
       if (!this.display) return ''
       if (this.display.type === 'or') return '满足以下任一项，即报出故障 ' + this.gzdm + '：'
       return '报出故障 ' + this.gzdm + '，需同时满足以下 ' + this.topCount + ' 项：'
+    },
+    /** 前置过滤和组合判定合成一段，样式上就是一个灰底等宽框。 */
+    cnBlock: function () {
+      return cnExplain(this.inherited, this.params, this.preview && this.preview.ruleDesc)
     }
   },
   methods: {
-    short: shortCodes,
+    /** 和原型清单一样用圆圈数字，不用普通阿拉伯数字。 */
+    circ: function (i) {
+      var s = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'
+      return s[i] || (i + 1)
+    },
     onLadder: function (e) {
       var node = e.target.closest && e.target.closest('[data-code]')
       if (node) this.$emit('toggle', node.getAttribute('data-code'))
@@ -95,6 +105,13 @@ export default {
 </script>
 
 <style scoped>
-.ckitem { display: flex; gap: 10px; padding: 8px 0; align-items: flex-start; }
-.vizhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 分段按钮不许把「分组清单」折成两行，整组跟着原型保持单行。 */
+.viztools { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; margin-left: auto; }
+.viztools .link,
+.viztools .small,
+.vizseg,
+.vizseg button { white-space: nowrap; }
+.vizseg { flex: none; min-width: 168px; }
+.vizseg button { flex: 1 0 auto; }
+.ckbody { flex: 1; min-width: 0; }
 </style>

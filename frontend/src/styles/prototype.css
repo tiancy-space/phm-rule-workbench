@@ -828,11 +828,14 @@ body {
   padding:0 4px;
   vertical-align:1px}
 
-details.named {
+details.named,
+.named {
   border:1px dashed #c4b5fd;
   background:#faf8ff;
   border-radius:6px;
-  padding:4px 10px 8px}
+  padding:4px 10px 8px;
+  width:100%;
+  box-sizing:border-box}
 details.named>summary {
   cursor:pointer;
   list-style:none;

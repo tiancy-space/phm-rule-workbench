@@ -26,15 +26,58 @@ export function atomSource (atom, params) {
 }
 
 /**
- * 前置黑名单很长时只展示前几个编码。
- * 例如 CC NOT IN ('8100','8200',...) → 8100、8200…等 26 个
+ * 把前置规则说成人话：信号用中文名，相等用「为 / 不为」，集合用「属于 / 不属于」。
+ * 黑名单超过 6 个时只列前 6 个，后面写「等 N 个」。枚举值换成字典里的中文。
  */
-export function shortCodes (expr) {
-  var text = String(expr || '')
-  var codes = text.match(/'[^']+'/g) || []
-  codes = codes.map(function (s) { return s.slice(1, -1) })
-  if (codes.length <= 4) return text
-  return codes.slice(0, 4).join('、') + '…等 ' + codes.length + ' 个'
+export function conditionPhrase (row, params) {
+  var col = (row && row.paramCol) || ''
+  var op = (row && row.cmpOp) || ''
+  var raw = row && row.cmpVal != null ? String(row.cmpVal) : ''
+  var param = (params || []).filter(function (x) { return x.paramCol === col })[0]
+  var name = (param && param.paramName) || col || '条件'
+  var enums = []
+  String((param && param.enumDict) || '').split(';').forEach(function (part) {
+    var i = part.indexOf(':')
+    if (i > 0) enums.push([part.slice(0, i).trim(), part.slice(i + 1).trim()])
+  })
+  function meaning (code) {
+    var hit = enums.filter(function (e) { return e[0] === code })[0]
+    return hit ? hit[1] : code
+  }
+  var value = raw.trim().replace(/^\(/, '').replace(/\)$/, '')
+  if (value.charAt(0) === "'" && value.charAt(value.length - 1) === "'" && value.indexOf(',') < 0) {
+    value = value.slice(1, -1)
+  }
+  if (value === '-' && op === '==') return name + ' 未取到（缺失）'
+  if (value === '-' && op === '!=') return name + ' 已取到'
+  if (op === 'IN' || op === 'NOT IN') {
+    var items = value.split(/[,，]/).map(function (s) {
+      return s.trim().replace(/^'+|'+$/g, '')
+    }).filter(Boolean).map(meaning)
+    var list = items.length > 6 ? items.slice(0, 6).join('、') + ' 等 ' + items.length + ' 个' : items.join('、')
+    return name + (op === 'IN' ? ' 属于 ' : ' 不属于 ') + list
+  }
+  if (op === '=~') return name + ' 匹配正则 ' + value
+  var named = meaning(value)
+  if (named !== value && (op === '==' || op === '!=')) {
+    return name + (op === '==' ? ' 为 ' : ' 不为 ') + named
+  }
+  var sym = { '==': '=', '!=': '≠', '>': '>', '>=': '≥', '<': '<', '<=': '≤' }[op] || op
+  var unit = param && param.unit ? ' ' + param.unit : ''
+  return name + ' ' + sym + ' ' + value + unit
+}
+
+/**
+ * 中文释义整段：前置过滤和组合判定放在同一个文本框里，中间空一行。
+ * 编号只写一次，不再在框外另列一条。
+ */
+export function cnExplain (filters, params, ruleDesc) {
+  var lines = (filters || []).map(function (p, i) {
+    return (i + 1) + '. ' + (p.filterName || '前置') + '：' + conditionPhrase(p, params)
+  })
+  var head = '前置过滤（均须通过，任一不通过即拦截）\n' + (lines.length ? lines.join('\n') : '无适用过滤条件')
+  var body = String(ruleDesc || '').trim()
+  return body ? head + '\n\n' + body : head
 }
 
 export function timingLabel (v) {

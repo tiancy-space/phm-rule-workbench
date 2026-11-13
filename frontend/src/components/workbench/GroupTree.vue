@@ -13,7 +13,7 @@
         <b>{{ node.name || node.code }}</b>
         <span class="kind">（{{ childKind }}）</span>
         <span v-if="node.alias" class="alias">{{ node.alias }}</span>
-        <span class="hint">{{ isOpen(node) ? '收起明细' : '展开明细' }}</span>
+        <span class="hint fold">{{ isOpen(node) ? '收起明细' : '展开明细' }}</span>
       </button>
       <group-tree v-if="isOpen(node) && node.child" :node="node.child" :open="open" @toggle="$emit('toggle', $event)" />
       <div v-else-if="isOpen(node)" class="error">命名组表达式有误</div>
@@ -59,12 +59,33 @@ export default {
 </script>
 
 <style scoped>
-.pillrow { padding: 3px 0 3px 8px; }
-.pill { display: inline-block; font-size: 11px; line-height: 18px; padding: 0 9px; border-radius: 9px; font-weight: 600; }
-.pill.or { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
-.pill.and { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
-.named { border: 1px dashed #c4b5fd; background: #faf8ff; border-radius: 6px; padding: 4px 10px 8px; margin: 4px 0; }
-.sum { border: 0; background: transparent; padding: 2px 0; width: 100%; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; text-align: left; cursor: pointer; }
-.gicon { color: #7c3aed; }
-.kind, .hint { color: #64748b; font-size: 12px; }
+/* 清单项占满 ckbody。命名组用原型的虚线紫框，不要缩成内容那么窄。 */
+.tree, .named, .leaf { width: 100%; box-sizing: border-box; }
+.named {
+  display: block;
+  border: 1px dashed #c4b5fd;
+  background: #faf8ff;
+  border-radius: 6px;
+  padding: 4px 10px 8px;
+  margin: 0;
+}
+.sum {
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.gicon { color: #7c3aed; font-size: 11px; }
+.sum b { color: #5b21b6; }
+.kind { color: #6d28d9; font-size: 12px; }
+.fold { margin-left: auto; color: #7c3aed; font-size: 12px; white-space: nowrap; }
+.leaf { font-size: 12.5px; }
 </style>

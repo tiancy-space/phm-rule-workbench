@@ -1,12 +1,12 @@
 <template>
-  <div class="mask" @keydown.esc="esc">
-    <div class="board">
+  <div class="mask" :class="{ leaving: leaving }">
+    <div class="board" :class="{ leaving: leaving }">
       <header class="bhead">
         <div>
           <b>处置流程管理</b>
           <div class="hint">粒度：车型＋来源＋故障代码 · 五类步骤（查看 / 判断 / 操作 / 联络上报 / 结束）· 司机 / 专家 / 系统协同</div>
         </div>
-        <el-button type="text" @click="$emit('close')">× 关闭</el-button>
+        <button type="button" class="close" @click="requestClose">×</button>
       </header>
       <div class="bcols" :class="{ wide: right === 'view' || right === 'trial' }">
         <aside class="scroll pane">
@@ -53,26 +53,36 @@
         <section class="scroll pane" v-if="flow">
           <div v-if="flow.isSample===1" class="banner">⚠ {{ flow.sampleNote || '示例内容，非正式规程，需按实际司机手册校核' }}</div>
           <div v-if="flow.bindings.length>1 || flow.isTemplate===1" class="banner purple">◆ 该流程由 {{ flow.bindings.length }} 个故障共用，修改将同步影响所有绑定故障</div>
-          <div class="fm">
-            <el-input v-model="flow.flowName" style="max-width:360px" @change="saveHeader" />
-            <span class="tag" :class="flow.flowStatus==='PUBLISHED'?'ok':'muted'">{{ statusText }}</span>
-            <el-button size="mini" @click="reload">校验</el-button>
-            <el-button size="mini" type="primary" :disabled="flow.verStatus==='PUBLISHED'" @click="publish">{{ flow.verStatus==='PUBLISHED' ? ('已发布 v' + flow.pubVerNo) : ('发布为 v' + ((flow.pubVerNo || 0) + 1)) }}</el-button>
-            <el-button size="mini" @click="addStep(null)">＋ 添加步骤</el-button>
-            <el-button size="mini" @click="brick=!brick">▦ 积木池</el-button>
-            <el-button size="mini" @click="asTemplate">存为通用模板</el-button>
-            <el-button size="mini" @click="bindDlg=true">绑定 / 解绑故障</el-button>
-            <el-button size="mini" type="text" @click="removeFlow">删除</el-button>
-          </div>
-          <div class="muted">默认窗口 T0 −
-            <el-input-number v-model="flow.winPreSec" :min="0" :max="3600" size="mini" @change="saveHeader" />
-            ～ T0 +
-            <el-input-number v-model="flow.winPostSec" :min="0" :max="3600" size="mini" @change="saveHeader" />
-            秒 · 运行信息 {{ flow.runInfoCols }}
+          <div class="fmhead">
+            <div class="between">
+              <div class="row" style="gap:6px">
+                <input class="fname" v-model="flow.flowName" aria-label="流程名称" @change="saveHeader" />
+                <span class="tag" :class="flow.flowStatus==='PUBLISHED'?'ok':'muted'">{{ statusText }}</span>
+              </div>
+              <div class="row" style="gap:5px">
+                <button type="button" class="small" @click="reload">校验</button>
+                <button type="button" class="small primary" :disabled="flow.verStatus==='PUBLISHED'" @click="publish">{{ flow.verStatus==='PUBLISHED' ? ('已发布 v' + flow.pubVerNo) : ('发布为 v' + ((flow.pubVerNo || 0) + 1)) }}</button>
+              </div>
+            </div>
+            <div class="row" style="gap:5px;margin-top:6px">
+              <button type="button" class="small" @click="addStep(null)">＋ 添加步骤</button>
+              <button type="button" class="small" @click="brick=!brick">▦ 积木池</button>
+              <button type="button" class="small" @click="asTemplate">存为通用模板</button>
+              <button type="button" class="small" @click="bindDlg=true">绑定 / 解绑故障</button>
+              <button type="button" class="small" @click="showSet=!showSet">流程设置 {{ showSet ? '▴' : '▾' }}</button>
+              <button type="button" class="small danger" @click="removeFlow">删除</button>
+            </div>
+            <div v-if="showSet" class="setbox">
+              默认取数窗口：T0 −
+              <input type="number" min="0" max="3600" v-model.number="flow.winPreSec" @change="saveHeader" />
+              s ～ T0 +
+              <input type="number" min="0" max="3600" v-model.number="flow.winPostSec" @change="saveHeader" />
+              s · 运行信息 {{ flow.runInfoCols }}
+            </div>
           </div>
           <div class="muted">绑定故障：
             <span v-for="b in flow.bindings" :key="b.faultRuleId" class="tag">{{ b.cx }}/{{ b.gzdm }}
-              <el-button type="text" @click="unbind(b)">×</el-button>
+              <button type="button" class="link small" @click="unbind(b)">×</button>
             </span>
           </div>
           <div v-if="!flow.errors.length && !flow.warnings.length" class="okbox">✓ 校验通过：每个分支都有出口、无死循环、参数适用车型匹配、包含结束节点</div>
@@ -102,12 +112,10 @@
                 <span v-if="s.stepType==='END'" class="concl">■ {{ conclLabel(s.conclusion) }}</span>
               </div>
             </div>
-            <div class="sacts">
-              <button type="button" class="link small" @click.stop="moveStep(i, -1)">上移</button>
-              <button type="button" class="link small" @click.stop="moveStep(i, 1)">下移</button>
-              <button type="button" class="link small" @click.stop="addStep(s.id)">＋插入</button>
-              <button type="button" class="link small" @click.stop="copyStep(s)">复制</button>
-              <button type="button" class="link small danger" @click.stop="delStep(s)">删除</button>
+            <div class="sacts" @click.stop>
+              <button type="button" class="link small" title="在其后插入" @click="addStep(s.id)">＋插入</button>
+              <button type="button" class="link small" title="复制" @click="copyStep(s)">复制</button>
+              <button type="button" class="link small danger" title="删除" @click="delStep(s)">删除</button>
             </div>
           </div>
           <div v-if="!flow.steps.length && sel && sel.faultId && !sel.flowId" class="empty">
@@ -138,8 +146,8 @@
                     <span><i class="lgs lg-ref"></i>转至 · 已展开</span>
                   </div>
                   <span>
-                    <el-button size="mini" @click="fitFlow">适应窗口</el-button>
-                    <el-button size="mini" @click="flowBig=true">展开大图</el-button>
+                    <button type="button" class="small" @click="fitFlow">适应窗口</button>
+                    <button type="button" class="small" @click="flowBig=true">展开大图</button>
                   </span>
                 </div>
                 <div class="flowstage" ref="flowbox"
@@ -386,7 +394,7 @@ export default {
       stepTab: 'basic',
       typeDlg: false, afterId: null, bindDlg: false, bindIds: [], applyOpen: false,
       events: [], eventId: null, event: null,
-      types: TYPES, limitOps: ['<', '<=', '>', '>='], flowBig: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND,
+      types: TYPES, limitOps: ['<', '<=', '>', '>='], flowBig: false, showSet: false, leaving: false, dragFrom: null, dragOver: null, legend: FLOW_LEGEND,
       flowScale: 1, flowTx: 0, flowTy: 0, flowFit: true, flowDrag: null
     }
   },
@@ -470,10 +478,18 @@ export default {
     this.refresh(true)
     var self = this
     this._fitResize = function () { if (self.flowFit && self.right === 'svg') self.fitFlow() }
+    this._onEsc = function (e) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      self.requestClose()
+    }
     window.addEventListener('resize', this._fitResize)
+    window.addEventListener('keydown', this._onEsc)
   },
   beforeDestroy: function () {
     window.removeEventListener('resize', this._fitResize)
+    window.removeEventListener('keydown', this._onEsc)
+    clearTimeout(this._leaveTimer)
   },
   methods: {
     refresh: function (pick) {
@@ -801,11 +817,17 @@ export default {
         self.flow = d
       }).catch(this.fail)
     },
-    esc: function () {
-      if (this.brick) this.brick = false
-      else if (this.step) this.step = null
-      else this.$emit('close')
+    /**
+     * Esc 或点关闭：先向右滑出，动画结束后再交给外层销毁。
+     * 监听挂在 window 上，组件销毁时一定卸掉。
+     */
+    requestClose: function () {
+      if (this.leaving) return
+      this.leaving = true
+      var self = this
+      this._leaveTimer = setTimeout(function () { self.$emit('close') }, 200)
     },
+    esc: function () { this.requestClose() },
     circ: function (i) { return CIRC[i] || (i + 1) },
     stepColor: function (t) {
       return { VIEW: '#0369a1', JUDGE: '#b45309', OP: '#15803d', CONTACT: '#be185d', END: '#334155' }[t] || '#334155'
@@ -923,13 +945,23 @@ export default {
 </script>
 
 <style scoped>
-.mask { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:20; display:flex; }
-.board { background:#f8fafc; margin:16px; flex:1; border-radius:12px; display:flex; flex-direction:column; min-width:0; }
-.bhead { display:flex; justify-content:space-between; padding:10px 14px; background:#fff; border-bottom:1px solid var(--line); }
-.bcols { flex:1; display:grid; grid-template-columns: 260px 1fr 340px; min-height:0; }
-.bcols.wide { grid-template-columns: 220px minmax(240px,1fr) minmax(520px,640px); }
+.mask { position:fixed; inset:0; background:#0f172a55; z-index:20; display:flex; justify-content:flex-end; }
+.board { background:#f8fafc; margin:0; width:98vw; height:100%; border-radius:0; display:flex; flex-direction:column; min-width:0; box-shadow:-15px 0 50px #0f172a33; animation:flowIn .22s ease-out; }
+.board.leaving { animation:flowOut .2s ease-in forwards; }
+@keyframes flowIn { from { transform:translateX(100%) } to { transform:translateX(0) } }
+@keyframes flowOut { from { transform:translateX(0) } to { transform:translateX(100%) } }
+.bhead { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 16px; background:#fff; border-bottom:1px solid var(--line); }
+.bcols, .bcols.wide { flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); min-height:0; }
+.fname { font-size:15px; font-weight:700; border:1px solid transparent; padding:3px 6px; min-width:180px; max-width:100%; background:#fff; }
+.fname:hover, .fname:focus { border-color:var(--line); }
+.setbox { margin-top:8px; font-size:12px; color:#64748b; background:#f8fafc; border-radius:6px; padding:8px; }
+.setbox input { width:64px; padding:4px 6px; }
+.fmhead { margin-bottom:8px; }
+.sacts { opacity:0; transition:opacity .15s; }
+.scard:hover .sacts, .scard.open .sacts { opacity:1; }
 .pane { padding:10px; min-height:0; background:#fff; border-right:1px solid var(--line); }
-.fcard, .pcard, .scard { border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0; }
+.fcard, .pcard { border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0; }
+.scard { margin:0 0 7px; }
 .fcard, .scard { cursor:pointer; }
 .fcard.active, .scard.on { border-color:#2563eb; background:#eff6ff; }
 .banner { background:#fffbeb; color:#b45309; padding:6px 8px; border-radius:6px; margin-bottom:6px; }
