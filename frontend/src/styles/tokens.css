@@ -1,0 +1,12 @@
+/* 原型设计变量。页面颜色只从这里取，避免再写散落的色值。 */
+:root {
+  --bg: #f5f7fa;
+  --ink: #1e293b;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --blue: #2563eb;
+  --light: #eff6ff;
+  --green: #15803d;
+  --amber: #b45309;
+  --red: #dc2626;
+}

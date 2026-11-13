@@ -7,19 +7,32 @@
       </header>
       <div class="bcols" :class="{ wide: right === 'view' || right === 'trial' }">
         <aside class="scroll pane">
-          <el-radio-group v-model="tab" size="mini">
-            <el-radio-button label="fault">故障</el-radio-button>
-            <el-radio-button label="tpl">通用模板</el-radio-button>
-          </el-radio-group>
+          <div class="between">
+            <el-radio-group v-model="tab" size="mini">
+              <el-radio-button label="fault">故障 {{ actionable.length }}</el-radio-button>
+              <el-radio-button label="tpl">通用模板 {{ templates.length }}</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div class="row" style="margin:6px 0">
+            <select v-model="flowCx" class="mini">
+              <option value="">全部车型</option>
+              <option v-for="c in flowCxOptions" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <select v-model="flowSt" class="mini">
+              <option value="">全部状态</option>
+              <option value="PUBLISHED">已发布</option>
+              <option value="DRAFT">草稿</option>
+              <option value="NONE">未配置</option>
+            </select>
+          </div>
           <el-input v-model="q" size="mini" placeholder="搜索" clearable style="margin:6px 0" />
           <template v-if="tab==='fault'">
-            <div v-for="f in faultRows" :key="f.id" class="fcard" :class="{active: sel && sel.type==='fault' && sel.faultId===f.id}" @click="selectFault(f)">
-              <div><b>{{ f.gzdm }}</b> <span class="tag" :class="'cz-'+f.czdj">{{ f.czdj==='CHECK'?'排查':'关注' }}</span> {{ f.cx }}</div>
-              <div>{{ f.gzmc }}</div>
-              <div class="muted" v-if="f.flowId">{{ f.flowStatus==='PUBLISHED' ? ('已发布 v'+f.pubVerNo) : '草稿' }} · {{ f.stepCount }} 步
-                <span v-if="f.isTemplate"> · 模板</span>
-              </div>
-              <div class="muted" v-else>○ 未配置处置流程</div>
+            <div v-for="f in faultRows" :key="f.id" class="flitem" :class="{sel: sel && sel.type==='fault' && sel.faultId===f.id}" @click="selectFault(f)">
+              <div class="between"><b class="flcode">{{ f.gzdm }}</b> <span class="cztag" :class="'cz-'+(f.czdj||'').toLowerCase()">{{ f.czdj==='CHECK'?'排查':'关注' }}</span></div>
+              <div class="flname">{{ f.gzmc }}</div>
+              <div class="muted">{{ f.cx }} · {{ f.ly }}</div>
+              <div v-if="f.flowId"><span class="stpill" :class="f.flowStatus==='PUBLISHED'?'pub':'draft'">{{ f.flowStatus==='PUBLISHED' ? ('已发布 v'+f.pubVerNo) : '草稿' }} · {{ f.stepCount }} 步</span></div>
+              <div v-else class="unset">○ 未配置处置流程</div>
             </div>
           </template>
           <template v-else>
@@ -63,22 +76,31 @@
               <li v-for="(w,i) in flow.warnings" :key="'w'+i" class="w">{{ w }}</li>
             </ul>
           </details>
-          <div v-for="(s,i) in flow.steps" :key="s.id" class="scard" :class="{on: step && step.id===s.id, over: dragOver===i}" @click="step=s"
+          <div v-for="(s,i) in flow.steps" :key="s.id" class="scard" :class="{open: step && step.id===s.id, dropin: dragOver===i}"
+               :style="{ '--tc': stepColor(s.stepType) }" @click="step=s"
                @dragover.prevent="dragOver=i" @drop.stop.prevent="onDrop(i)">
-            <div class="row">
-              <span class="handle" draggable="true" title="拖拽排序" @dragstart.stop="onDragStart(i, $event)" @dragend="dragFrom=null; dragOver=null">⋮⋮</span>
-              <b>{{ circ(i) }}</b> <span class="tag">{{ typeLabel(s.stepType) }}</span> {{ s.stepTitle }}
+            <span class="sgrip" draggable="true" title="拖拽排序" @dragstart.stop="onDragStart(i, $event)" @dragend="dragFrom=null; dragOver=null">⋮⋮</span>
+            <div class="sbody">
+              <div class="srow1">
+                <span class="sno">{{ circ(i) }}</span>
+                <span class="tbadge" :class="'t-' + s.stepType.toLowerCase()">{{ typeLabel(s.stepType) }}</span>
+                <b class="stt">{{ s.stepTitle }}</b>
+              </div>
+              <div class="srow2">
+                <span v-for="r in s.roleCodes" :key="r" class="rchip" :class="roleClass(r)">{{ roleLabel(r) }}</span>
+                <span class="cardcnt">卡 {{ (s.cards||[]).length }}</span>
+                <span class="exits">
+                  <span v-for="b in s.branches" :key="b.id" :class="{ missing: !b.nextStepId && s.stepType!=='END' }">{{ b.branchLabel }} → {{ b.nextStepCode || '未配置' }}</span>
+                </span>
+                <span v-if="s.stepType==='END'" class="concl">■ {{ conclLabel(s.conclusion) }}</span>
+              </div>
             </div>
-            <div class="muted">{{ (s.roleCodes||[]).join(' / ') }} · 卡 {{ (s.cards||[]).length }}
-              · <span v-for="b in s.branches" :key="b.id">{{ b.branchLabel }} → {{ b.nextStepCode || '未配置' }} </span>
-              <span v-if="s.stepType==='END'">■ {{ conclLabel(s.conclusion) }}</span>
-            </div>
-            <div>
-              <el-button type="text" @click.stop="moveStep(i, -1)">上移</el-button>
-              <el-button type="text" @click.stop="moveStep(i, 1)">下移</el-button>
-              <el-button type="text" @click.stop="addStep(s.id)">＋插入</el-button>
-              <el-button type="text" @click.stop="copyStep(s)">复制</el-button>
-              <el-button type="text" @click.stop="delStep(s)">删除</el-button>
+            <div class="sacts">
+              <button type="button" class="link small" @click.stop="moveStep(i, -1)">上移</button>
+              <button type="button" class="link small" @click.stop="moveStep(i, 1)">下移</button>
+              <button type="button" class="link small" @click.stop="addStep(s.id)">插入</button>
+              <button type="button" class="link small" @click.stop="copyStep(s)">复制</button>
+              <button type="button" class="link small danger" @click.stop="delStep(s)">删除</button>
             </div>
           </div>
           <div v-if="!flow.steps.length && sel && sel.faultId && !sel.flowId" class="empty">
@@ -98,8 +120,18 @@
         <aside class="scroll pane">
           <el-tabs v-model="right">
             <el-tab-pane label="流程图" name="svg">
-              <div class="row"><span class="muted">{{ legend }}</span><el-button size="mini" @click="flowBig=true">展开大图</el-button></div>
-              <div class="flowbox" v-html="svg" @click="onSvg"></div>
+              <div class="between">
+                <div class="glegend">
+                  <span><i class="lgs lg-view"></i>查看</span>
+                  <span><i class="lgs lg-judge"></i>判断</span>
+                  <span><i class="lgs lg-op"></i>操作</span>
+                  <span><i class="lgs lg-contact"></i>联络上报</span>
+                  <span><i class="lgs lg-end"></i>结束</span>
+                  <span><i class="lgs lg-ref"></i>转至 · 已展开</span>
+                </div>
+                <el-button size="mini" @click="flowBig=true">展开大图</el-button>
+              </div>
+              <div class="flowbox fit" v-html="svg" @click="onSvg"></div>
             </el-tab-pane>
             <el-tab-pane label="司机 / 专家视角" name="view">
               <flow-runner v-if="flow" :flow="flow" :trial="false" :active="right==='view'" />
@@ -330,7 +362,7 @@ export default {
   components: { BigCanvas: BigCanvas, FlowRunner: FlowRunner },
   data: function () {
     return {
-      faults: [], flows: [], tab: 'fault', q: '', sel: null, flow: null, step: null,
+      faults: [], flows: [], tab: 'fault', q: '', flowCx: '', flowSt: '', sel: null, flow: null, step: null,
       right: 'svg', brick: false, brickTab: 'param', brickQ: '', params: [], atoms: [], groups: [],
       stepTab: 'basic',
       typeDlg: false, afterId: null, bindDlg: false, bindIds: [], applyOpen: false,
@@ -342,9 +374,20 @@ export default {
     actionable: function () {
       return this.faults.filter(function (f) { return f.czdj === 'CHECK' || f.czdj === 'WATCH' })
     },
+    flowCxOptions: function () {
+      var s = {}
+      this.actionable.forEach(function (f) { s[f.cx] = 1 })
+      return Object.keys(s)
+    },
     faultRows: function () {
       var q = (this.q || '').toLowerCase()
+      var cx = this.flowCx
+      var st = this.flowSt
       return this.actionable.filter(function (f) {
+        if (cx && f.cx !== cx) return false
+        if (st === 'NONE' && f.flowId) return false
+        if (st === 'PUBLISHED' && f.flowStatus !== 'PUBLISHED') return false
+        if (st === 'DRAFT' && !(f.flowId && f.flowStatus !== 'PUBLISHED')) return false
         return !q || (f.gzdm + f.gzmc + (f.flowName || '')).toLowerCase().indexOf(q) >= 0
       })
     },
@@ -685,6 +728,11 @@ export default {
       else this.$emit('close')
     },
     circ: function (i) { return CIRC[i] || (i + 1) },
+    stepColor: function (t) {
+      return { VIEW: '#0369a1', JUDGE: '#b45309', OP: '#15803d', CONTACT: '#be185d', END: '#334155' }[t] || '#334155'
+    },
+    roleLabel: function (r) { return { DRIVER: '司机', EXPERT: '专家', SYSTEM: '系统' }[r] || r },
+    roleClass: function (r) { return { DRIVER: 'r-driver', EXPERT: 'r-expert', SYSTEM: 'r-system' }[r] || '' },
     typeLabel: function (t) {
       var f = TYPES.filter(function (x) { return x.v === t })[0]
       return f ? f.l : t
@@ -816,6 +864,9 @@ export default {
 .handle { cursor:grab; color:#94a3b8; padding:0 6px; letter-spacing:-1px; user-select:none; }
 .scard.over { box-shadow:inset 0 3px 0 #2563eb; }
 .flowbox { overflow:auto; border:1px solid var(--line); border-radius:8px; background:#fff; }
+.flowbox.fit >>> svg, .flowbox.fit svg { width: 100%; height: auto; }
+.glegend { font-size: 11px; color: #64748b; }
+select.mini { font-size: 12px; padding: 4px 6px; max-width: 120px; }
 .okbox { background:#f0fdf4; color:#15803d; padding:8px; border-radius:8px; }
 .fm { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .simbanner { background:#fff7ed; border:1px solid #fdba74; color:#9a3412; border-radius:5px; padding:5px 9px; font-size:12px; font-weight:600; margin-bottom:7px; display:flex; justify-content:space-between; align-items:center; }
