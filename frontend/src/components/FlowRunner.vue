@@ -441,13 +441,16 @@ export default {
 </script>
 
 <style scoped>
-.trialbar { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+.trialbar { display:flex; gap:6px; align-items:center; margin-bottom:6px; min-width:0; flex-wrap:wrap; }
 .simbanner { background:#fff7ed; border:1px solid #fdba74; color:#9a3412; border-radius:5px; padding:5px 9px; font-size:12px; font-weight:600; margin-bottom:7px; display:flex; justify-content:space-between; align-items:center; }
 .simbanner.view { background:#f0f9ff; border-color:#bae6fd; color:#0369a1; font-weight:500; }
 .runinfo { display:flex; flex-wrap:wrap; gap:4px; background:#1e293b; color:#e2e8f0; border-radius:6px; padding:7px 9px; margin-bottom:8px; font-size:12px; }
 .runinfo span { display:inline-flex; gap:5px; margin-right:10px; }
 .runinfo i { font-style:normal; color:#94a3b8; }
-.persp { display:grid; grid-template-columns:minmax(0,1fr) 205px; gap:9px; }
+/* 右栏试跑：左专家工作台，右司机车载屏固定 205px，和原型 .persp 一致。 */
+.persp { display:grid; grid-template-columns:minmax(0,1fr) 205px; gap:9px; min-width:0; }
+.expert, .driver { min-width:0; }
+.trialbar >>> .el-select { flex:1; min-width:0; }
 .phead { font-size:11px; font-weight:700; color:#64748b; letter-spacing:.5px; margin-bottom:6px; }
 .expert { background:#fff; border:1px solid var(--line); border-radius:8px; padding:9px; }
 .curstep { border-left:4px solid #334155; background:#f8fafc; border-radius:5px; padding:7px 9px; margin-bottom:7px; font-size:12px; }

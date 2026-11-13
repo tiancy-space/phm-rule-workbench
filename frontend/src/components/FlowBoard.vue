@@ -951,8 +951,10 @@ export default {
 @keyframes flowIn { from { transform:translateX(100%) } to { transform:translateX(0) } }
 @keyframes flowOut { from { transform:translateX(0) } to { transform:translateX(100%) } }
 .bhead { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 16px; background:#fff; border-bottom:1px solid var(--line); }
-.bcols, .bcols.wide { flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); min-height:0; }
-.fname { font-size:15px; font-weight:700; border:1px solid transparent; padding:3px 6px; min-width:180px; max-width:100%; background:#fff; }
+/* 原型 .fbody：左栏固定 290px，右栏 47%，中间吃剩余。1280 宽下中间大约 375px。 */
+.bcols, .bcols.wide { flex:1; display:grid; grid-template-columns:290px minmax(0,1fr) 47%; min-height:0; }
+.bcols > .pane, .bcols > .chartpane { min-width:0; }
+.fname { font-size:15px; font-weight:700; border:1px solid transparent; padding:3px 6px; min-width:0; width:100%; max-width:240px; background:#fff; }
 .fname:hover, .fname:focus { border-color:var(--line); }
 .setbox { margin-top:8px; font-size:12px; color:#64748b; background:#f8fafc; border-radius:6px; padding:8px; }
 .setbox input { width:64px; padding:4px 6px; }
@@ -961,7 +963,10 @@ export default {
 .scard:hover .sacts, .scard.open .sacts { opacity:1; }
 .pane { padding:10px; min-height:0; background:#fff; border-right:1px solid var(--line); }
 .fcard, .pcard { border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0; }
-.scard { margin:0 0 7px; }
+.scard { margin:0 0 7px; max-width:100%; }
+.sbody, .srow1, .srow2, .exits { min-width:0; max-width:100%; }
+.stt { min-width:0; }
+.exits span { overflow-wrap:anywhere; }
 .fcard, .scard { cursor:pointer; }
 .fcard.active, .scard.on { border-color:#2563eb; background:#eff6ff; }
 .banner { background:#fffbeb; color:#b45309; padding:6px 8px; border-radius:6px; margin-bottom:6px; }
