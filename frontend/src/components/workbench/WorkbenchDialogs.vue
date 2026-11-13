@@ -27,32 +27,58 @@
       </div>
     </el-drawer>
 
-    <el-dialog :title="host.preForm && host.preForm.id ? '编辑前置规则' : '新增前置规则'" :visible.sync="host.preFormVisible" width="520px" custom-class="proto-dialog">
-      <el-form v-if="host.preForm" label-width="110px" size="small">
-        <el-form-item label="规则名称"><el-input v-model="host.preForm.filterName" /></el-form-item>
-        <el-form-item label="协议指标">
-          <el-select v-model="host.preForm.paramCol" filterable style="width:100%">
+    <proto-modal :visible="!!host.preForm" :title="host.preForm && host.preForm.id ? '编辑通用前置规则' : '新增通用前置规则'" @close="host.preForm = null">
+      <form v-if="host.preForm" @submit.prevent="host.savePre()">
+        <label class="field">规则名称
+          <el-input v-model="host.preForm.filterName" />
+        </label>
+        <label class="field">协议指标
+          <el-select v-model="host.preForm.paramCol" filterable>
             <el-option v-for="p in host.params" :key="p.id" :label="p.paramName + ' ' + p.paramCol" :value="p.paramCol" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="比较符">
-          <el-select v-model="host.preForm.cmpOp" style="width:100%"><el-option v-for="o in host.ops" :key="o" :label="o" :value="o" /></el-select>
-        </el-form-item>
-        <el-form-item label="目标值"><el-input v-model="host.preForm.cmpVal" /></el-form-item>
-        <el-form-item label="适用车型"><el-input v-model="host.preForm.scopeCx" placeholder="ALL 或 HXD1C,HXD1D" /></el-form-item>
-        <el-form-item label="适用来源">
-          <el-select v-model="host.preForm.scopeLy" style="width:100%"><el-option v-for="x in ['ALL','TCMS','6A']" :key="x" :label="x" :value="x" /></el-select>
-        </el-form-item>
-        <el-form-item label="执行时机">
-          <el-select v-model="host.preForm.execTiming" style="width:100%">
-            <el-option label="查 HBase 前短路拦截" value="BEFORE_HBASE" />
-            <el-option label="查 HBase 后拦截" value="AFTER_HBASE" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="优先级"><el-input-number v-model="host.preForm.priority" :min="1" /></el-form-item>
-      </el-form>
-      <span slot="footer"><button type="button" class="primary" @click="host.savePre()">保存前置规则</button></span>
-    </el-dialog>
+        </label>
+        <div class="cols2">
+          <label class="field">比较符
+            <el-select v-model="host.preForm.cmpOp">
+              <el-option v-for="o in host.ops" :key="o" :label="o === '=~' ? '=~ 正则匹配' : o" :value="o" />
+            </el-select>
+          </label>
+          <label class="field">目标值
+            <el-input v-model="host.preForm.cmpVal" />
+          </label>
+        </div>
+        <label class="field">适用车型范围（ALL 与具体车型互斥）</label>
+        <div class="checkgrid">
+          <label v-for="m in scopeModels" :key="m">
+            <input type="checkbox" :checked="scopeOn(m)" @change="toggleScope(m, $event.target.checked)">
+            {{ m === 'ALL' ? 'ALL 全部车型' : m }}
+          </label>
+        </div>
+        <div class="cols2" style="margin-top:13px">
+          <label class="field">适用来源
+            <el-select v-model="host.preForm.scopeLy">
+              <el-option label="ALL 全部来源" value="ALL" />
+              <el-option label="TCMS" value="TCMS" />
+              <el-option label="6A" value="6A" />
+            </el-select>
+          </label>
+          <label class="field">执行时机
+            <el-select v-model="host.preForm.execTiming">
+              <el-option label="查 HBase 前短路拦截" value="BEFORE_HBASE" />
+              <el-option label="查 HBase 后拦截" value="AFTER_HBASE" />
+            </el-select>
+          </label>
+        </div>
+        <label class="field">优先级（数字越小越先执行）
+          <el-input-number v-model="host.preForm.priority" :min="1" />
+        </label>
+        <p class="hint">指标若来自 HBase，执行时机应选「查 HBase 后拦截」。保存后按车型与来源重新计算各故障继承的前置。</p>
+      </form>
+      <template slot="footer">
+        <button type="button" @click="host.preForm = null">取消</button>
+        <button type="button" class="primary" @click="host.savePre()">保存前置规则</button>
+      </template>
+    </proto-modal>
 
     <el-dialog :title="host.atomDlg && host.atomDlg.id ? '编辑原子规则' : '新建原子规则'" :visible.sync="host.atomVisible" width="560px" custom-class="proto-dialog">
       <el-form v-if="host.atomDlg" label-width="120px" size="small">
@@ -130,13 +156,54 @@
 <script>
 import { timingLabel } from '../../workbench/explain'
 import GroupPreview from '../GroupPreview.vue'
+import ProtoModal from './ProtoModal.vue'
 /**
- * 前置、原子、命名组和故障的编辑弹窗。数据仍放在工作台宿主上，这里只负责原型样式的壳。
+ * 前置、原子、命名组和故障的编辑弹窗。保存仍走宿主上的原接口。
+ * 前置规则的新建/编辑用原型 modal：标题、分组字段、说明、底部按钮。
  */
 export default {
   name: 'WorkbenchDialogs',
-  components: { GroupPreview: GroupPreview },
+  components: { GroupPreview: GroupPreview, ProtoModal: ProtoModal },
   props: { host: { type: Object, required: true } },
-  methods: { timing: timingLabel }
+  computed: {
+    /** 车型勾选：ALL 在前，再加底账里出现过的车型，以及当前值里多出来的车型。 */
+    scopeModels: function () {
+      var set = { ALL: 1 }
+      ;(this.host.cxOptions || []).forEach(function (c) { if (c) set[c] = 1 })
+      this.scopeList().forEach(function (s) { set[s] = 1 })
+      return Object.keys(set).sort(function (a, b) {
+        if (a === 'ALL') return -1
+        if (b === 'ALL') return 1
+        return a < b ? -1 : a > b ? 1 : 0
+      })
+    }
+  },
+  methods: {
+    timing: timingLabel,
+    scopeList: function () {
+      var raw = (this.host.preForm && this.host.preForm.scopeCx) || ''
+      return String(raw).split(',').map(function (s) { return s.trim() }).filter(Boolean)
+    },
+    scopeOn: function (m) { return this.scopeList().indexOf(m) >= 0 },
+    /** 勾选写回 scopeCx 字符串。选 ALL 会清掉具体车型，选具体车型会去掉 ALL。 */
+    toggleScope: function (code, on) {
+      if (!this.host.preForm) return
+      var cur = this.scopeList()
+      if (on) {
+        cur = code === 'ALL' ? ['ALL'] : cur.filter(function (x) { return x !== 'ALL' && x !== code }).concat([code])
+      } else {
+        cur = cur.filter(function (x) { return x !== code })
+      }
+      this.host.preForm.scopeCx = cur.join(',')
+    }
+  }
 }
 </script>
+
+<style scoped>
+/* Element 控件嵌在原型 label.field 里，拉成和原生输入框一样的整行。 */
+.field >>> .el-input,
+.field >>> .el-select,
+.field >>> .el-input-number { display: block; width: 100%; margin-top: 5px; }
+.hint { margin: 4px 0 0; }
+</style>

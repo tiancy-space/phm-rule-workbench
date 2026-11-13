@@ -73,3 +73,8 @@
   border-color: #2563eb;
   background: #2563eb;
 }
+/* 原型弹窗遮罩在 3000，下拉层写在 body 上，要盖过遮罩。 */
+.el-select-dropdown.el-popper,
+.el-picker-panel {
+  z-index: 4100 !important;
+}
