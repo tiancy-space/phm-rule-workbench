@@ -22,11 +22,19 @@ public class RuleParamMeta extends BaseEntity {
     private String unit;
     /** 码表，编码:名称;编码:名称 */
     private String enumDict;
-    /** 数据源：KAFKA、HBASE、HBASE_PHM、HBASE_LKJ、HBASE_6A、DIM */
+    /** 数据源：TCMS、6A、LKJ、DWD、DIM。旧值仍可能出现在未迁移的库里 */
     private String dataSource;
     /** 实表名，未知为 - */
     private String hbaseTable;
-    /** 适用车型，ALL 或逗号分隔 */
+    /** 所属协议。车型过滤用它，不用 scopeCx */
+    private Long protocolId;
+    /** 所属子系统 */
+    private String subsystem;
+    /** 1 不出现在下拉，数据仍保留 */
+    private Integer isHidden;
+    /** RESERVED 预留 / HEADER 帧头 */
+    private String hideReason;
+    /** 已废弃。保留列，查询不再使用 */
     private String scopeCx;
     /** 页面是否可选 */
     private Integer isSelectable;

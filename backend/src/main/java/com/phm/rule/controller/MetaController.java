@@ -7,8 +7,10 @@ import com.phm.rule.dto.ParamSaveRequest;
 import com.phm.rule.entity.DictItem;
 import com.phm.rule.entity.RuleParamMeta;
 import com.phm.rule.mapper.DictItemMapper;
+import com.phm.rule.entity.RuleProtocol;
 import com.phm.rule.service.FaultRuleService;
 import com.phm.rule.service.ParamMetaService;
+import com.phm.rule.service.ProtocolService;
 import com.phm.rule.vo.StatsVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,6 +37,7 @@ public class MetaController {
 
     private final DictItemMapper dictMapper;
     private final ParamMetaService paramService;
+    private final ProtocolService protocolService;
     private final FaultRuleService faultRuleService;
 
     /**
@@ -42,9 +45,11 @@ public class MetaController {
      * @param paramService     参数
      * @param faultRuleService 统计
      */
-    public MetaController(DictItemMapper dictMapper, ParamMetaService paramService, FaultRuleService faultRuleService) {
+    public MetaController(DictItemMapper dictMapper, ParamMetaService paramService, ProtocolService protocolService,
+                          FaultRuleService faultRuleService) {
         this.dictMapper = dictMapper;
         this.paramService = paramService;
+        this.protocolService = protocolService;
         this.faultRuleService = faultRuleService;
     }
 
@@ -87,9 +92,23 @@ public class MetaController {
     public ApiResult<PageResult<RuleParamMeta>> params(@RequestParam(required = false) String keyword,
                                                        @RequestParam(required = false) String cx,
                                                        @RequestParam(required = false) String dataType,
+                                                       @RequestParam(required = false) String dataSource,
+                                                       @RequestParam(defaultValue = "false") boolean includeHidden,
                                                        @RequestParam(defaultValue = "1") long pageNum,
                                                        @RequestParam(defaultValue = "200") long pageSize) {
-        return ApiResult.ok(paramService.page(keyword, cx, dataType, pageNum, pageSize));
+        return ApiResult.ok(paramService.page(keyword, cx, dataType, dataSource, includeHidden, pageNum, pageSize));
+    }
+
+    /**
+     * 协议列表。传入车型时只返回该车型挂接的协议。
+     *
+     * @param cx 车型，可空
+     * @return 协议
+     */
+    @GetMapping("/protocols")
+    @Operation(summary = "采集协议列表")
+    public ApiResult<List<RuleProtocol>> protocols(@RequestParam(required = false) String cx) {
+        return ApiResult.ok(protocolService.list(cx));
     }
 
     /**

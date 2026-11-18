@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS t_phm_rule_param_meta (
     enum_dict       VARCHAR(2048),
     data_source     VARCHAR(16)     NOT NULL,
     hbase_table     VARCHAR(128)    NOT NULL DEFAULT '-',
+    protocol_id     BIGINT,
+    subsystem       VARCHAR(64),
+    is_hidden       SMALLINT        NOT NULL DEFAULT 0,
+    hide_reason     VARCHAR(16),
     scope_cx        VARCHAR(512)    NOT NULL DEFAULT 'ALL',
     is_selectable   SMALLINT        NOT NULL DEFAULT 1,
     is_enabled      SMALLINT        NOT NULL DEFAULT 1,
@@ -73,11 +77,13 @@ CREATE TABLE IF NOT EXISTS t_phm_rule_param_meta (
     del_flag        SMALLINT        NOT NULL DEFAULT 0,
     CONSTRAINT uk_phm_rule_param_meta UNIQUE (param_col, hbase_table),
     CONSTRAINT ck_phm_param_type CHECK (data_type IN ('NUMBER', 'ENUM', 'STRING')),
-    CONSTRAINT ck_phm_param_src  CHECK (data_source IN ('KAFKA', 'HBASE', 'HBASE_PHM', 'HBASE_LKJ', 'HBASE_6A', 'DIM')),
+    CONSTRAINT ck_phm_param_src  CHECK (data_source IN ('KAFKA', 'HBASE', 'HBASE_PHM', 'HBASE_LKJ', 'HBASE_6A', 'DIM', 'TCMS', '6A', 'LKJ', 'DWD')),
     CONSTRAINT ck_phm_param_col  CHECK (param_col = UPPER(param_col)),
     CONSTRAINT ck_phm_param_sel  CHECK (is_selectable IN (0, 1)),
     CONSTRAINT ck_phm_param_en   CHECK (is_enabled IN (0, 1)),
-    CONSTRAINT ck_phm_param_del  CHECK (del_flag IN (0, 1))
+    CONSTRAINT ck_phm_param_del  CHECK (del_flag IN (0, 1)),
+    CONSTRAINT ck_phm_param_hide CHECK (is_hidden IN (0, 1)),
+    CONSTRAINT ck_phm_param_hreason CHECK (hide_reason IS NULL OR hide_reason IN ('RESERVED', 'HEADER'))
 );
 COMMENT ON TABLE  t_phm_rule_param_meta               IS '规则测点参数元数据：原子规则、前置规则、数据卡都从这里选参数（中文名、单位、码表、数据源、实表、适用车型）';
 COMMENT ON COLUMN t_phm_rule_param_meta.id            IS '主键';
@@ -86,9 +92,13 @@ COMMENT ON COLUMN t_phm_rule_param_meta.param_name    IS '参数中文名，如 
 COMMENT ON COLUMN t_phm_rule_param_meta.data_type     IS '数据类型：NUMBER 数值 / ENUM 枚举状态 / STRING 文本';
 COMMENT ON COLUMN t_phm_rule_param_meta.unit          IS '单位，如 V、kPa、km/h、℃';
 COMMENT ON COLUMN t_phm_rule_param_meta.enum_dict     IS '枚举码表，格式 编码:名称;编码:名称，如 0:断开;1:闭合';
-COMMENT ON COLUMN t_phm_rule_param_meta.data_source   IS '数据源：KAFKA 实时消息 / HBASE_PHM TCMS 参数表 / HBASE_LKJ LKJ 参数表 / HBASE_6A / HBASE 车型专属表 / DIM 维表';
+COMMENT ON COLUMN t_phm_rule_param_meta.data_source   IS '数据源：TCMS / 6A / LKJ / DWD（页面称故障实时字段）/ DIM（维表）。历史值 KAFKA、HBASE、HBASE_PHM、HBASE_LKJ、HBASE_6A 由迁移脚本归一';
 COMMENT ON COLUMN t_phm_rule_param_meta.hbase_table   IS '实表名（HBase 表或维表），未知写 -';
-COMMENT ON COLUMN t_phm_rule_param_meta.scope_cx      IS '适用车型，ALL 或逗号分隔车型列表';
+COMMENT ON COLUMN t_phm_rule_param_meta.protocol_id   IS '所属协议（FK t_phm_rule_protocol.id）。车型过滤走协议与车型关系，不再看 scope_cx';
+COMMENT ON COLUMN t_phm_rule_param_meta.subsystem     IS '所属子系统，如 空气制动、牵引系统。带“(扩展)”的名称已并回主名称';
+COMMENT ON COLUMN t_phm_rule_param_meta.is_hidden     IS '下拉是否屏蔽：1 不出现在参数选择里（数据仍保留）0 可见';
+COMMENT ON COLUMN t_phm_rule_param_meta.hide_reason   IS '屏蔽原因：RESERVED 参数名含预留 / HEADER 子系统为公共基础；未屏蔽为空';
+COMMENT ON COLUMN t_phm_rule_param_meta.scope_cx      IS '【废弃】适用车型，ALL 或逗号分隔。本版保留列，查询不再使用，改由 t_phm_rule_protocol_cx 按协议过滤';
 COMMENT ON COLUMN t_phm_rule_param_meta.is_selectable IS '页面是否可选：1 可选 0 隐藏';
 COMMENT ON COLUMN t_phm_rule_param_meta.is_enabled    IS '是否启用：1 启用 0 停用';
 COMMENT ON COLUMN t_phm_rule_param_meta.remark        IS '备注';
@@ -99,6 +109,8 @@ COMMENT ON COLUMN t_phm_rule_param_meta.update_by     IS '最后修改人';
 COMMENT ON COLUMN t_phm_rule_param_meta.update_time   IS '最后修改时间';
 COMMENT ON COLUMN t_phm_rule_param_meta.del_flag      IS '逻辑删除：0 正常 1 已删除';
 CREATE INDEX IF NOT EXISTS idx_phm_param_col ON t_phm_rule_param_meta (param_col);
+CREATE INDEX IF NOT EXISTS idx_phm_param_protocol ON t_phm_rule_param_meta (protocol_id);
+CREATE INDEX IF NOT EXISTS idx_phm_param_hidden ON t_phm_rule_param_meta (is_hidden);
 
 -- =====================================================================================
 -- 2. 共享原子规则（原型 atoms，编号 R001…）
@@ -836,3 +848,62 @@ COMMENT ON COLUMN t_phm_sim_event_answer.create_time  IS '创建时间';
 COMMENT ON COLUMN t_phm_sim_event_answer.update_by    IS '最后修改人';
 COMMENT ON COLUMN t_phm_sim_event_answer.update_time  IS '最后修改时间';
 COMMENT ON COLUMN t_phm_sim_event_answer.del_flag     IS '逻辑删除：0 正常 1 已删除';
+
+-- =====================================================================================
+-- 20. 采集协议与车型关系（参数按协议过滤车型，不再使用参数表 scope_cx）
+-- =====================================================================================
+CREATE TABLE IF NOT EXISTS t_phm_rule_protocol (
+    id              BIGSERIAL       PRIMARY KEY,
+    protocol_code   VARCHAR(64)     NOT NULL,
+    protocol_name   VARCHAR(128)    NOT NULL,
+    data_source     VARCHAR(16)     NOT NULL,
+    hbase_table     VARCHAR(128)    NOT NULL DEFAULT '-',
+    is_enabled      SMALLINT        NOT NULL DEFAULT 1,
+    remark          VARCHAR(512),
+    rev             INTEGER         NOT NULL DEFAULT 1,
+    create_by       VARCHAR(64)     NOT NULL DEFAULT 'system',
+    create_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by       VARCHAR(64)     NOT NULL DEFAULT 'system',
+    update_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    del_flag        SMALLINT        NOT NULL DEFAULT 0,
+    CONSTRAINT uk_phm_rule_protocol_code UNIQUE (protocol_code),
+    CONSTRAINT ck_phm_protocol_src CHECK (data_source IN ('TCMS', '6A', 'LKJ', 'DWD', 'DIM')),
+    CONSTRAINT ck_phm_protocol_en  CHECK (is_enabled IN (0, 1)),
+    CONSTRAINT ck_phm_protocol_del CHECK (del_flag IN (0, 1))
+);
+COMMENT ON TABLE  t_phm_rule_protocol                 IS '采集协议：一个 Kafka 主题一行。DWD、DIM 是虚拟协议，覆盖全部车型，承载故障实时字段和维表字段';
+COMMENT ON COLUMN t_phm_rule_protocol.protocol_code   IS '协议编码，Kafka 主题名，或虚拟协议 DWD / DIM';
+COMMENT ON COLUMN t_phm_rule_protocol.protocol_name   IS '协议名称。DWD 在页面上显示为故障实时字段';
+COMMENT ON COLUMN t_phm_rule_protocol.data_source     IS '数据源：TCMS / 6A / LKJ / DWD / DIM';
+COMMENT ON COLUMN t_phm_rule_protocol.hbase_table     IS '该协议参数所在实表，没有则写 -';
+COMMENT ON COLUMN t_phm_rule_protocol.is_enabled      IS '是否启用：1 启用 0 停用（如暂未用到的主题）';
+COMMENT ON COLUMN t_phm_rule_protocol.remark          IS '备注';
+COMMENT ON COLUMN t_phm_rule_protocol.rev             IS '修订号（乐观锁）';
+COMMENT ON COLUMN t_phm_rule_protocol.create_by       IS '创建人';
+COMMENT ON COLUMN t_phm_rule_protocol.create_time     IS '创建时间';
+COMMENT ON COLUMN t_phm_rule_protocol.update_by       IS '最后修改人';
+COMMENT ON COLUMN t_phm_rule_protocol.update_time     IS '最后修改时间';
+COMMENT ON COLUMN t_phm_rule_protocol.del_flag        IS '逻辑删除：0 正常 1 已删除';
+
+CREATE TABLE IF NOT EXISTS t_phm_rule_protocol_cx (
+    id              BIGSERIAL       PRIMARY KEY,
+    protocol_id     BIGINT          NOT NULL,
+    cx              VARCHAR(32)     NOT NULL,
+    create_by       VARCHAR(64)     NOT NULL DEFAULT 'system',
+    create_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by       VARCHAR(64)     NOT NULL DEFAULT 'system',
+    update_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    del_flag        SMALLINT        NOT NULL DEFAULT 0,
+    CONSTRAINT uk_phm_rule_protocol_cx UNIQUE (protocol_id, cx),
+    CONSTRAINT fk_phm_protocol_cx FOREIGN KEY (protocol_id) REFERENCES t_phm_rule_protocol (id),
+    CONSTRAINT ck_phm_protocol_cx_del CHECK (del_flag IN (0, 1))
+);
+COMMENT ON TABLE  t_phm_rule_protocol_cx               IS '协议适用车型：一行只有一个协议和一个车型。同一车型可以挂多个协议';
+COMMENT ON COLUMN t_phm_rule_protocol_cx.protocol_id   IS '协议 ID（FK t_phm_rule_protocol.id）';
+COMMENT ON COLUMN t_phm_rule_protocol_cx.cx            IS '车型编码，如 HXD1D';
+COMMENT ON COLUMN t_phm_rule_protocol_cx.create_by     IS '创建人';
+COMMENT ON COLUMN t_phm_rule_protocol_cx.create_time   IS '创建时间';
+COMMENT ON COLUMN t_phm_rule_protocol_cx.update_by     IS '最后修改人';
+COMMENT ON COLUMN t_phm_rule_protocol_cx.update_time   IS '最后修改时间';
+COMMENT ON COLUMN t_phm_rule_protocol_cx.del_flag      IS '逻辑删除：0 正常 1 已删除';
+CREATE INDEX IF NOT EXISTS idx_phm_protocol_cx_cx ON t_phm_rule_protocol_cx (cx);

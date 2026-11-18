@@ -214,9 +214,7 @@
               <div v-for="c in step.cards" :key="c.id" class="pcard">
                 <div class="row"><b>{{ c.cardCode }} · {{ cardKindLabel(c.cardKind) }}</b><el-button type="text" @click="delCard(c)">删除</el-button></div>
                 <div v-if="c.unfitCx && c.unfitCx.length" class="bad">⚠ 不适用于 {{ c.unfitCx.join('、') }}</div>
-                <el-select v-if="c.cardKind!=='FAULT'" v-model="c.paramCol" filterable size="mini" style="width:100%" @change="saveCard(c)">
-                  <el-option v-for="p in params" :key="p.id" :label="p.paramName+' '+p.paramCol" :value="p.paramCol" />
-                </el-select>
+                <param-select v-if="c.cardKind!=='FAULT'" :value="c.paramCol" :cx="cardCx" @input="setCardParam(c, $event)" />
                 <el-input v-else v-model="c.relGzdm" size="mini" placeholder="关联故障代码，逗号分隔" @change="saveCard(c)" />
                 <div class="muted" v-if="paramOf(c)">{{ paramOf(c).unit || '无单位' }} · {{ paramOf(c).dataSource }}</div>
                 <div>窗口 T0 − <el-input-number v-model="c.winPreSec" size="mini" :min="0" @change="saveCard(c)" /> ～ T0 + <el-input-number v-model="c.winPostSec" size="mini" :min="0" @change="saveCard(c)" /> 秒</div>
@@ -374,6 +372,7 @@ import http from '../api/http'
 import { flowSvg, FLOW_LEGEND, contentBox, fitTransform } from '../utils/flowSvg'
 import BigCanvas from './BigCanvas.vue'
 import FlowRunner from './FlowRunner.vue'
+import ParamSelect from './workbench/ParamSelect.vue'
 
 var TYPES = [
   { v: 'VIEW', l: '查看', h: '查看数据与现场状态' },
@@ -386,7 +385,7 @@ var CIRC = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'
 
 export default {
   name: 'FlowBoard',
-  components: { BigCanvas: BigCanvas, FlowRunner: FlowRunner },
+  components: { BigCanvas: BigCanvas, FlowRunner: FlowRunner, ParamSelect: ParamSelect },
   data: function () {
     return {
       faults: [], flows: [], tab: 'fault', q: '', flowCx: '', flowSt: '', sel: null, flow: null, step: null,
@@ -430,6 +429,9 @@ export default {
     },
     svg: function () {
       return this.flow ? flowSvg(this.flow.steps, { hl: this.step && this.step.id }) : ''
+    },
+    cardCx: function () {
+      return (this.sel && this.sel.fault && this.sel.fault.cx) || ''
     },
     flowTransform: function () {
       return { transform: 'translate(' + this.flowTx + 'px,' + this.flowTy + 'px) scale(' + this.flowScale + ')' }
@@ -497,7 +499,7 @@ export default {
       return Promise.all([
         http.get('/api/faults'),
         http.get('/api/flows'),
-        http.get('/api/params', { params: { pageSize: 500 } }),
+        http.get('/api/params', { params: { pageSize: 200 } }),
         http.get('/api/atoms'),
         http.get('/api/groups')
       ]).then(function (all) {
@@ -524,6 +526,17 @@ export default {
       if (f.flowId) this.open(f.flowId)
       else { this.flow = null; this.events = [] }
       this.loadTrials(f.id)
+      this.loadParams()
+    },
+    /** 积木池按当前故障车型取一页可见参数。数据卡下拉自己再远程搜索。 */
+    loadParams: function () {
+      var self = this
+      var cx = this.sel && this.sel.fault && this.sel.fault.cx
+      var query = { pageSize: 200 }
+      if (cx) query.cx = cx
+      http.get('/api/params', { params: query }).then(function (page) {
+        self.params = (page && page.records) || []
+      }).catch(this.fail)
     },
     selectFlow: function (t) {
       this.sel = { type: 'tpl', flowId: t.id }
@@ -852,6 +865,10 @@ export default {
     },
     cardKindLabel: function (k) {
       return { NUM: '数值窗口', STATE: '状态量', FAULT: '关联故障' }[k] || k
+    },
+    setCardParam: function (c, code) {
+      c.paramCol = code
+      this.saveCard(c)
     },
     paramOf: function (c) {
       if (!c || !c.paramCol) return null

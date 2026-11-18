@@ -33,9 +33,7 @@
           <el-input v-model="host.preForm.filterName" />
         </label>
         <label class="field">协议指标
-          <el-select v-model="host.preForm.paramCol" filterable>
-            <el-option v-for="p in host.params" :key="p.id" :label="p.paramName + ' ' + p.paramCol" :value="p.paramCol" />
-          </el-select>
+          <param-select v-model="host.preForm.paramCol" :cx="preCx" @pick="remember" />
         </label>
         <div class="cols2">
           <label class="field">比较符
@@ -101,9 +99,7 @@
         </div>
         <template v-if="host.atomDlg.atomType === 'PARAM'">
           <label class="field">V3 协议参数元数据
-            <el-select v-model="host.atomDlg.paramCol" filterable placeholder="按中文名 / 编码检索协议参数">
-              <el-option v-for="p in host.params" :key="p.paramCol + p.id" :label="p.paramName + ' · ' + p.paramCol + (p.dataSource ? ' · ' + p.dataSource : '') + (p.unit ? ' · ' + p.unit : '')" :value="p.paramCol" />
-            </el-select>
+            <param-select v-model="host.atomDlg.paramCol" :cx="atomCx" placeholder="按中文名 / 编码 / 子系统搜索" @pick="remember" />
           </label>
           <div v-if="atomParam" class="note">
             <b>{{ atomParam.paramName }}</b> · <code>{{ atomParam.paramCol }}</code><br>
@@ -222,13 +218,14 @@
 import { timingLabel } from '../../workbench/explain'
 import GroupPreview from '../GroupPreview.vue'
 import ProtoModal from './ProtoModal.vue'
+import ParamSelect from './ParamSelect.vue'
 /**
  * 前置、原子、命名组和故障的编辑弹窗。保存仍走宿主上的原接口。
  * 前置规则的新建/编辑用原型 modal：标题、分组字段、说明、底部按钮。
  */
 export default {
   name: 'WorkbenchDialogs',
-  components: { GroupPreview: GroupPreview, ProtoModal: ProtoModal },
+  components: { GroupPreview: GroupPreview, ProtoModal: ProtoModal, ParamSelect: ParamSelect },
   props: { host: { type: Object, required: true } },
   data: function () { return { groupAtomQ: '' } },
   computed: {
@@ -299,6 +296,18 @@ export default {
       return unit
     },
     quickCodes: function () { return ['1873', '1874', '1031', '1742'] },
+    /** 前置规则勾了一个具体车型时按该车型过滤；ALL 或多种车型则不限。 */
+    preCx: function () {
+      var raw = (this.host.preForm && this.host.preForm.scopeCx) || ''
+      var list = String(raw).split(',').map(function (s) { return s.trim() }).filter(Boolean)
+      if (list.length === 1 && list[0] !== 'ALL') return list[0]
+      return ''
+    },
+    atomCx: function () {
+      var scope = this.host.atomDlg && this.host.atomDlg.scopeCx
+      if (scope && scope !== 'ALL' && scope.indexOf(',') < 0) return scope
+      return (this.host.draft && this.host.draft.cx) || ''
+    },
     groupTitle: function () {
       var g = this.host.groupDlg
       if (!g) return ''
@@ -333,6 +342,11 @@ export default {
   },
   methods: {
     timing: timingLabel,
+    /** 把远程选中的参数留在宿主列表里，中文释义和参数说明还能查到单位和码表。 */
+    remember: function (row) {
+      if (!row || !this.host.params) return
+      if (!this.host.params.some(function (p) { return p.id === row.id })) this.host.params.push(row)
+    },
     winFnLabel: function (f) {
       return { allNotExists: '窗口内均未出现', anyExists: '窗口内任一出现', allExists: '窗口内全部出现', anyNotExists: '窗口内不全出现' }[f] || f
     },
