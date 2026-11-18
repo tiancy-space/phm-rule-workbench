@@ -6,6 +6,9 @@
 -- 金仓 V8R6 Oracle 模式版。与 PostgreSQL 版的数据语句相同。
 -- 备份表、加列放在匿名块里：对象已存在就跳过，方便重复执行。
 -- 若本库不接受 DROP CONSTRAINT IF EXISTS，把 IF EXISTS 三个字删掉再执行一次即可。
+-- ksql 默认用分号截断语句。匿名块里也有分号，必须先把结束符改成斜杠。
+
+\set SQLTERM /
 
 BEGIN
     EXECUTE IMMEDIATE 'CREATE TABLE t_phm_rule_param_meta_bak_20261118 AS SELECT * FROM t_phm_rule_param_meta';
@@ -33,7 +36,44 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END;
 /
+\set SQLTERM ;
+
 UPDATE t_phm_rule_param_meta SET is_hidden = 0 WHERE is_hidden IS NULL;
+
+-- 协议表。已迁移过的库会跳过建表，后面的 INSERT 用 NOT EXISTS，可以再跑。
+CREATE TABLE IF NOT EXISTS t_phm_rule_protocol (
+    id              BIGSERIAL       PRIMARY KEY,
+    protocol_code   VARCHAR(64)     NOT NULL,
+    protocol_name   VARCHAR(128)    NOT NULL,
+    data_source     VARCHAR(16)     NOT NULL,
+    hbase_table     VARCHAR(128)    NOT NULL DEFAULT '-',
+    is_enabled      SMALLINT        NOT NULL DEFAULT 1,
+    remark          VARCHAR(512),
+    rev             INTEGER         NOT NULL DEFAULT 1,
+    create_by       VARCHAR(64)     NOT NULL DEFAULT 'system',
+    create_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by       VARCHAR(64)     NOT NULL DEFAULT 'system',
+    update_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    del_flag        SMALLINT        NOT NULL DEFAULT 0,
+    CONSTRAINT uk_phm_rule_protocol_code UNIQUE (protocol_code),
+    CONSTRAINT ck_phm_protocol_src CHECK (data_source IN ('TCMS', '6A', 'LKJ', 'DWD', 'DIM')),
+    CONSTRAINT ck_phm_protocol_en  CHECK (is_enabled IN (0, 1)),
+    CONSTRAINT ck_phm_protocol_del CHECK (del_flag IN (0, 1))
+);
+CREATE TABLE IF NOT EXISTS t_phm_rule_protocol_cx (
+    id              BIGSERIAL       PRIMARY KEY,
+    protocol_id     BIGINT          NOT NULL,
+    cx              VARCHAR(32)     NOT NULL,
+    create_by       VARCHAR(64)     NOT NULL DEFAULT 'system',
+    create_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by       VARCHAR(64)     NOT NULL DEFAULT 'system',
+    update_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    del_flag        SMALLINT        NOT NULL DEFAULT 0,
+    CONSTRAINT uk_phm_rule_protocol_cx UNIQUE (protocol_id, cx),
+    CONSTRAINT fk_phm_protocol_cx FOREIGN KEY (protocol_id) REFERENCES t_phm_rule_protocol (id),
+    CONSTRAINT ck_phm_protocol_cx_del CHECK (del_flag IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS idx_phm_protocol_cx_cx ON t_phm_rule_protocol_cx (cx);
 
 -- 协议与车型。可重复执行。
 INSERT INTO t_phm_rule_protocol (protocol_code, protocol_name, data_source, hbase_table, is_enabled, remark, create_by, update_by)
@@ -7142,3 +7182,17 @@ COMMENT ON COLUMN t_phm_rule_param_meta.subsystem IS '所属子系统。带(扩�
 COMMENT ON COLUMN t_phm_rule_param_meta.is_hidden IS '1 不出现在参数下拉，数据仍保留';
 COMMENT ON COLUMN t_phm_rule_param_meta.hide_reason IS 'RESERVED 预留 / HEADER 帧头（公共基础）';
 COMMENT ON COLUMN t_phm_rule_param_meta.data_source IS '数据源：TCMS / 6A / LKJ / DWD / DIM。DWD 页面称故障实时字段';
+
+-- 索引已存在时匿名块吞掉错误，已经迁过的库再跑也安全。
+\set SQLTERM /
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE INDEX idx_phm_param_protocol ON t_phm_rule_param_meta (protocol_id)';
+EXCEPTION WHEN OTHERS THEN NULL;
+END;
+/
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE INDEX idx_phm_param_hidden ON t_phm_rule_param_meta (is_hidden)';
+EXCEPTION WHEN OTHERS THEN NULL;
+END;
+/
+\set SQLTERM ;

@@ -4,6 +4,8 @@ import com.phm.rule.entity.FaultRule;
 import com.phm.rule.entity.PreFilterRule;
 import com.phm.rule.entity.RuleParamMeta;
 import com.phm.rule.entity.RuleProtocol;
+import com.phm.rule.vo.ParamOptionVO;
+import com.phm.rule.vo.SourceCountVO;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -248,6 +250,42 @@ public interface RuleQueryMapper {
      * @param cx 车型，可空
      * @return 协议
      */
+    /**
+     * 下拉选项。不分页，最多 5000 条，够一个车型下一个数据源用。
+     * keyword 为空时建议带上 dataSource，避免一次把全部车型的参数都拉下来。
+     *
+     * @param keyword    编码、中文名或子系统，可空
+     * @param cx         车型，可空
+     * @param dataSource 数据源，可空。空则跨来源，给搜索用
+     * @return 可见参数
+     */
+    @Select("<script>SELECT p.id, p.param_col, p.param_name, p.unit, p.data_type, p.subsystem, p.data_source "
+            + "FROM t_phm_rule_param_meta p WHERE p.del_flag = 0 AND p.is_enabled = 1 AND p.is_hidden = 0 "
+            + "<if test='dataSource != null and dataSource != \"\"'> AND p.data_source = #{dataSource} </if>"
+            + "<if test='keyword != null and keyword != \"\"'> AND ("
+            + "LOWER(p.param_col) LIKE '%' || LOWER(#{keyword}) || '%' OR "
+            + "LOWER(p.param_name) LIKE '%' || LOWER(#{keyword}) || '%' OR "
+            + "LOWER(COALESCE(p.subsystem, '')) LIKE '%' || LOWER(#{keyword}) || '%') </if>"
+            + "<if test='cx != null and cx != \"\"'> AND EXISTS (SELECT 1 FROM t_phm_rule_protocol_cx x "
+            + "WHERE x.protocol_id = p.protocol_id AND x.cx = #{cx} AND x.del_flag = 0) </if>"
+            + " ORDER BY p.data_source, CASE WHEN p.subsystem IS NULL OR p.subsystem = '' THEN 1 ELSE 0 END, "
+            + "p.subsystem, p.param_name LIMIT 5000</script>")
+    List<ParamOptionVO> selectParamOptions(@Param("keyword") String keyword, @Param("cx") String cx,
+                                           @Param("dataSource") String dataSource);
+
+    /**
+     * 各数据源在该车型下的可见条数。没有参数的来源不会出现在结果里。
+     *
+     * @param cx 车型，可空
+     * @return 来源和条数
+     */
+    @Select("<script>SELECT p.data_source, COUNT(*) AS count FROM t_phm_rule_param_meta p "
+            + "WHERE p.del_flag = 0 AND p.is_enabled = 1 AND p.is_hidden = 0 "
+            + "<if test='cx != null and cx != \"\"'> AND EXISTS (SELECT 1 FROM t_phm_rule_protocol_cx x "
+            + "WHERE x.protocol_id = p.protocol_id AND x.cx = #{cx} AND x.del_flag = 0) </if>"
+            + " GROUP BY p.data_source</script>")
+    List<SourceCountVO> countBySource(@Param("cx") String cx);
+
     @Select("<script>SELECT * FROM t_phm_rule_protocol p WHERE p.del_flag = 0 AND p.is_enabled = 1 "
             + "<if test='cx != null and cx != \"\"'> AND EXISTS (SELECT 1 FROM t_phm_rule_protocol_cx x "
             + "WHERE x.protocol_id = p.id AND x.cx = #{cx} AND x.del_flag = 0) </if>"

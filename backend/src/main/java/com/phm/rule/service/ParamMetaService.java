@@ -15,6 +15,8 @@ import com.phm.rule.mapper.PreFilterRuleMapper;
 import com.phm.rule.mapper.RuleAtomMapper;
 import com.phm.rule.mapper.RuleParamMetaMapper;
 import com.phm.rule.mapper.RuleQueryMapper;
+import com.phm.rule.vo.ParamOptionVO;
+import com.phm.rule.vo.SourceCountVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,6 +83,32 @@ public class ParamMetaService {
         long total = queryMapper.countParams(word, model, type, source, includeHidden);
         List<RuleParamMeta> rows = queryMapper.selectParams(word, model, type, source, includeHidden, size, offset);
         return PageResult.of(total, num, size, rows);
+    }
+
+    /**
+     * 某个车型、某个数据源下的全部可见参数。给下拉一次装完，不再只取第一页。
+     *
+     * @param keyword    搜索词，可空
+     * @param cx         车型，可空
+     * @param dataSource 数据源，可空
+     * @return 轻量行
+     */
+    public List<ParamOptionVO> options(String keyword, String cx, String dataSource) {
+        return queryMapper.selectParamOptions(trim(keyword), trim(cx), trim(dataSource));
+    }
+
+    /**
+     * 页签上的数字。只统计未屏蔽的启用参数。
+     *
+     * @param cx 车型，可空
+     * @return 各数据源条数
+     */
+    public List<SourceCountVO> sourceCounts(String cx) {
+        return queryMapper.countBySource(trim(cx));
+    }
+
+    private String trim(String s) {
+        return s == null ? "" : s.trim();
     }
 
     /**

@@ -7125,4 +7125,8 @@ COMMENT ON COLUMN t_phm_rule_param_meta.is_hidden IS '1 不出现在参数下拉
 COMMENT ON COLUMN t_phm_rule_param_meta.hide_reason IS 'RESERVED 预留 / HEADER 帧头（公共基础）';
 COMMENT ON COLUMN t_phm_rule_param_meta.data_source IS '数据源：TCMS / 6A / LKJ / DWD / DIM。DWD 页面称故障实时字段';
 
+-- 下拉按协议、按是否屏蔽过滤，重复执行不会再建同名索引。
+CREATE INDEX IF NOT EXISTS idx_phm_param_protocol ON t_phm_rule_param_meta (protocol_id);
+CREATE INDEX IF NOT EXISTS idx_phm_param_hidden ON t_phm_rule_param_meta (is_hidden);
+
 COMMIT;

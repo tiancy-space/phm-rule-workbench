@@ -11,6 +11,8 @@ import com.phm.rule.entity.RuleProtocol;
 import com.phm.rule.service.FaultRuleService;
 import com.phm.rule.service.ParamMetaService;
 import com.phm.rule.service.ProtocolService;
+import com.phm.rule.vo.ParamOptionVO;
+import com.phm.rule.vo.SourceCountVO;
 import com.phm.rule.vo.StatsVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -97,6 +99,34 @@ public class MetaController {
                                                        @RequestParam(defaultValue = "1") long pageNum,
                                                        @RequestParam(defaultValue = "200") long pageSize) {
         return ApiResult.ok(paramService.page(keyword, cx, dataType, dataSource, includeHidden, pageNum, pageSize));
+    }
+
+    /**
+     * 下拉选项。不分页。带 dataSource 时返回该来源在此车型下的全部可见参数。
+     *
+     * @param keyword    编码、中文名或子系统
+     * @param cx         车型
+     * @param dataSource 数据源，搜索时可以不传
+     * @return 轻量参数
+     */
+    @GetMapping("/params/options")
+    @Operation(summary = "参数下拉选项（不分页）")
+    public ApiResult<List<ParamOptionVO>> paramOptions(@RequestParam(required = false) String keyword,
+                                                       @RequestParam(required = false) String cx,
+                                                       @RequestParam(required = false) String dataSource) {
+        return ApiResult.ok(paramService.options(keyword, cx, dataSource));
+    }
+
+    /**
+     * 各数据源的可见条数，用来决定页签显不显示、上面写几。
+     *
+     * @param cx 车型
+     * @return 来源和条数
+     */
+    @GetMapping("/params/source-counts")
+    @Operation(summary = "按数据源统计可见参数")
+    public ApiResult<List<SourceCountVO>> sourceCounts(@RequestParam(required = false) String cx) {
+        return ApiResult.ok(paramService.sourceCounts(cx));
     }
 
     /**
