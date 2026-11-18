@@ -245,5 +245,46 @@ export function flowSvg (steps, opt) {
   return '<svg class="flowsvg" xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
     '<style>' + FLOW_STYLE + '</style>' +
     '<defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs>' +
-    '<rect width="' + W + '" height="' + H + '" fill="#ffffff"/>' + edges + labels + nodes + '</svg>'
+    '<rect width="' + W + '" height="' + H + '" fill="#ffffff"/>' +
+    '<g class="flowbody">' + edges + labels + nodes + '</g></svg>'
+}
+
+/**
+ * 内容包围盒。优先量 .flowbody，这样铺满画布的白底不会把盒子撑满。
+ * 图还没挂进文档时 getBBox 会抛，退回 width/height 属性。
+ */
+export function contentBox (svg) {
+  if (!svg) return { x: 0, y: 0, width: 1, height: 1 }
+  var node = svg.querySelector ? (svg.querySelector('.flowbody') || svg) : svg
+  try {
+    var b = node.getBBox()
+    if (b && b.width > 0 && b.height > 0) return { x: b.x, y: b.y, width: b.width, height: b.height }
+  } catch (e) { /* 未入文档 */ }
+  return {
+    x: 0,
+    y: 0,
+    width: Number(svg.getAttribute && svg.getAttribute('width')) || 1,
+    height: Number(svg.getAttribute && svg.getAttribute('height')) || 1
+  }
+}
+
+/**
+ * 把包围盒放进容器。缩放取宽、高两个方向里较小的那个，四周留边，不放大超过 1。
+ * tx/ty 按 transform-origin 在左上角来算，使缩放后的包围盒在容器中居中。
+ */
+export function fitTransform (box, view, pad) {
+  var margin = pad == null ? 16 : pad
+  var bw = Math.max(box.width || 1, 1)
+  var bh = Math.max(box.height || 1, 1)
+  var aw = Math.max((view.width || 0) - margin * 2, 1)
+  var ah = Math.max((view.height || 0) - margin * 2, 1)
+  var scale = Math.min(aw / bw, ah / bh, 1)
+  if (!isFinite(scale) || scale <= 0) scale = 1
+  var x = box.x || 0
+  var y = box.y || 0
+  return {
+    scale: scale,
+    tx: ((view.width || 0) - bw * scale) / 2 - x * scale,
+    ty: ((view.height || 0) - bh * scale) / 2 - y * scale
+  }
 }

@@ -14,6 +14,9 @@ import com.phm.rule.mapper.DisposeCardMapper;
 import com.phm.rule.mapper.PreFilterRuleMapper;
 import com.phm.rule.mapper.RuleAtomMapper;
 import com.phm.rule.mapper.RuleParamMetaMapper;
+import com.phm.rule.mapper.RuleQueryMapper;
+import com.phm.rule.vo.ParamOptionVO;
+import com.phm.rule.vo.SourceCountVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,10 +33,13 @@ import java.util.Set;
 public class ParamMetaService {
 
     private static final Set<String> TYPES = new HashSet<String>(Arrays.asList("NUMBER", "ENUM", "STRING"));
+    /** 新数据只用这五个。旧值仍接受，避免未跑迁移的库无法保存。 */
     private static final Set<String> SOURCES = new HashSet<String>(Arrays.asList(
-            "KAFKA", "HBASE", "HBASE_PHM", "HBASE_LKJ", "HBASE_6A", "DIM"));
+            "TCMS", "6A", "LKJ", "DWD", "DIM",
+            "KAFKA", "HBASE", "HBASE_PHM", "HBASE_LKJ", "HBASE_6A"));
 
     private final RuleParamMetaMapper mapper;
+    private final RuleQueryMapper queryMapper;
     private final RuleAtomMapper atomMapper;
     private final PreFilterRuleMapper preMapper;
     private final DisposeCardMapper cardMapper;
@@ -44,9 +50,10 @@ public class ParamMetaService {
      * @param preMapper  前置规则
      * @param cardMapper 数据卡
      */
-    public ParamMetaService(RuleParamMetaMapper mapper, RuleAtomMapper atomMapper,
+    public ParamMetaService(RuleParamMetaMapper mapper, RuleQueryMapper queryMapper, RuleAtomMapper atomMapper,
                             PreFilterRuleMapper preMapper, DisposeCardMapper cardMapper) {
         this.mapper = mapper;
+        this.queryMapper = queryMapper;
         this.atomMapper = atomMapper;
         this.preMapper = preMapper;
         this.cardMapper = cardMapper;
@@ -55,39 +62,53 @@ public class ParamMetaService {
     /**
      * 按关键字、车型和数据类型分页。工作台一次取较多条，默认 200。
      *
-     * @param keyword  编码或中文名
-     * @param cx       只看适用于该车型的参数，空表示不限
-     * @param dataType 数据类型
-     * @param pageNum  页码
-     * @param pageSize 页大小
+     * @param keyword       编码、中文名或子系统
+     * @param cx            车型。非空时只返回挂了该车型的协议下的参数
+     * @param dataType      数据类型
+     * @param dataSource    数据源
+     * @param includeHidden 是否包含已屏蔽参数
+     * @param pageNum       页码
+     * @param pageSize      页大小，最大 500
      * @return 分页
      */
-    public PageResult<RuleParamMeta> page(String keyword, String cx, String dataType, long pageNum, long pageSize) {
-        LambdaQueryWrapper<RuleParamMeta> q = new LambdaQueryWrapper<RuleParamMeta>();
-        if (keyword != null && !keyword.trim().isEmpty()) {
-            String k = keyword.trim();
-            q.and(w -> w.like(RuleParamMeta::getParamCol, k).or().like(RuleParamMeta::getParamName, k));
-        }
-        if (dataType != null && !dataType.trim().isEmpty()) {
-            q.eq(RuleParamMeta::getDataType, dataType.trim());
-        }
-        q.eq(RuleParamMeta::getIsEnabled, 1);
-        q.orderByAsc(RuleParamMeta::getParamCol);
-        List<RuleParamMeta> all = mapper.selectList(q);
-        if (cx != null && !cx.trim().isEmpty()) {
-            String model = cx.trim();
-            List<RuleParamMeta> fit = new java.util.ArrayList<RuleParamMeta>();
-            for (RuleParamMeta row : all) {
-                if (fits(row.getScopeCx(), model)) {
-                    fit.add(row);
-                }
-            }
-            all = fit;
-        }
-        int from = (int) Math.max(0, (pageNum - 1) * pageSize);
-        int to = (int) Math.min(all.size(), from + pageSize);
-        List<RuleParamMeta> slice = from >= all.size() ? java.util.Collections.<RuleParamMeta>emptyList() : all.subList(from, to);
-        return PageResult.of(all.size(), pageNum, pageSize, slice);
+    public PageResult<RuleParamMeta> page(String keyword, String cx, String dataType, String dataSource,
+                                          boolean includeHidden, long pageNum, long pageSize) {
+        long size = Math.min(Math.max(pageSize, 1), 500);
+        long num = Math.max(pageNum, 1);
+        long offset = (num - 1) * size;
+        String word = keyword == null ? "" : keyword.trim();
+        String model = cx == null ? "" : cx.trim();
+        String type = dataType == null ? "" : dataType.trim();
+        String source = dataSource == null ? "" : dataSource.trim();
+        long total = queryMapper.countParams(word, model, type, source, includeHidden);
+        List<RuleParamMeta> rows = queryMapper.selectParams(word, model, type, source, includeHidden, size, offset);
+        return PageResult.of(total, num, size, rows);
+    }
+
+    /**
+     * 某个车型、某个数据源下的全部可见参数。给下拉一次装完，不再只取第一页。
+     *
+     * @param keyword    搜索词，可空
+     * @param cx         车型，可空
+     * @param dataSource 数据源，可空
+     * @return 轻量行
+     */
+    public List<ParamOptionVO> options(String keyword, String cx, String dataSource) {
+        return queryMapper.selectParamOptions(trim(keyword), trim(cx), trim(dataSource));
+    }
+
+    /**
+     * 页签上的数字。只统计未屏蔽的启用参数。
+     *
+     * @param cx 车型，可空
+     * @return 各数据源条数
+     */
+    public List<SourceCountVO> sourceCounts(String cx) {
+        return queryMapper.countBySource(trim(cx));
+    }
+
+    private String trim(String s) {
+        return s == null ? "" : s.trim();
     }
 
     /**
@@ -203,10 +224,4 @@ public class ParamMetaService {
         return s == null || s.trim().isEmpty() ? null : s.trim();
     }
 
-    private boolean fits(String scope, String cx) {
-        if (scope == null || "ALL".equals(scope)) {
-            return true;
-        }
-        return Texts.splitComma(scope).contains(cx);
-    }
 }
