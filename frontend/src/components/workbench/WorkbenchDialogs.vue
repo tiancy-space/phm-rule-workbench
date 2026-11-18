@@ -32,9 +32,9 @@
         <label class="field">规则名称
           <el-input v-model="host.preForm.filterName" />
         </label>
-        <label class="field">协议指标
+        <div class="field">协议指标
           <param-select v-model="host.preForm.paramCol" :cx="preCx" @pick="remember" />
-        </label>
+        </div>
         <div class="cols2">
           <label class="field">比较符
             <el-select v-model="host.preForm.cmpOp">
@@ -98,9 +98,9 @@
           </label>
         </div>
         <template v-if="host.atomDlg.atomType === 'PARAM'">
-          <label class="field">V3 协议参数元数据
+          <div class="field">V3 协议参数元数据
             <param-select v-model="host.atomDlg.paramCol" :cx="atomCx" placeholder="按中文名 / 编码 / 子系统搜索" @pick="remember" />
-          </label>
+          </div>
           <div v-if="atomParam" class="note">
             <b>{{ atomParam.paramName }}</b> · <code>{{ atomParam.paramCol }}</code><br>
             数据源 {{ atomParam.dataSource || '—' }}　单位 {{ atomParam.unit || '无' }}

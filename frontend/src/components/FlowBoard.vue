@@ -214,7 +214,7 @@
               <div v-for="c in step.cards" :key="c.id" class="pcard">
                 <div class="row"><b>{{ c.cardCode }} · {{ cardKindLabel(c.cardKind) }}</b><el-button type="text" @click="delCard(c)">删除</el-button></div>
                 <div v-if="c.unfitCx && c.unfitCx.length" class="bad">⚠ 不适用于 {{ c.unfitCx.join('、') }}</div>
-                <param-select v-if="c.cardKind!=='FAULT'" :value="c.paramCol" :cx="cardCx" @input="setCardParam(c, $event)" />
+                <param-select v-if="c.cardKind!=='FAULT'" :value="c.paramCol" :cx="cardCx" @input="setCardParam(c, $event)" @pick="rememberParam" />
                 <el-input v-else v-model="c.relGzdm" size="mini" placeholder="关联故障代码，逗号分隔" @change="saveCard(c)" />
                 <div class="muted" v-if="paramOf(c)">{{ paramOf(c).unit || '无单位' }} · {{ paramOf(c).dataSource }}</div>
                 <div>窗口 T0 − <el-input-number v-model="c.winPreSec" size="mini" :min="0" @change="saveCard(c)" /> ～ T0 + <el-input-number v-model="c.winPostSec" size="mini" :min="0" @change="saveCard(c)" /> 秒</div>
@@ -869,6 +869,16 @@ export default {
     setCardParam: function (c, code) {
       c.paramCol = code
       this.saveCard(c)
+    },
+    /** 数据卡选中的参数可能不在积木池那一页里，补进列表后单位和数据源才能显示。 */
+    rememberParam: function (row) {
+      if (!row || !row.paramCol) return
+      var hit = this.params.filter(function (p) { return p.paramCol === row.paramCol })[0]
+      if (hit) {
+        Object.keys(row).forEach(function (k) { if (row[k] != null && row[k] !== '') hit[k] = row[k] })
+        return
+      }
+      this.params.push(row)
     },
     paramOf: function (c) {
       if (!c || !c.paramCol) return null
